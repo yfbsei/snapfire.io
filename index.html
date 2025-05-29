@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Open World FPS</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+</head>
+<body class="bg-game-bg text-white overflow-hidden font-game">
+    <!-- Start Screen -->
+    <div id="startScreen" class="fixed inset-0 bg-black/80 backdrop-blur-sm flex flex-col items-center justify-center z-50">
+        <h1 class="text-6xl font-black mb-4 text-transparent bg-gradient-to-r from-game-primary to-game-secondary bg-clip-text">
+            OPEN WORLD FPS
+        </h1>
+        <p class="text-xl mb-8 text-gray-300">Click to start and enable pointer lock</p>
+        <button id="startButton" class="px-8 py-4 bg-game-primary hover:bg-green-400 text-black font-bold text-xl rounded-lg transition-all duration-200 transform hover:scale-105">
+            START GAME
+        </button>
+    </div>
+
+    <!-- Game Canvas Container -->
+    <div id="gameContainer" class="w-screen h-screen relative">
+        <!-- Game UI Overlay -->
+        <div id="ui" class="absolute inset-0 pointer-events-none z-10">
+            <!-- Crosshair -->
+            <div id="crosshair" class="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-6 h-6 border-2 border-white rounded-full shadow-lg shadow-white/50"></div>
+            
+            <!-- HUD -->
+            <div id="hud" class="absolute bottom-6 left-6 space-y-2">
+                <div class="bg-black/60 backdrop-blur-sm px-4 py-2 rounded-lg border border-white/20">
+                    <span class="text-game-danger">❤</span> Health: <span id="health" class="font-bold">100</span>
+                </div>
+                <div class="bg-black/60 backdrop-blur-sm px-4 py-2 rounded-lg border border-white/20">
+                    <span class="text-game-warning">🔫</span> Ammo: <span id="ammo" class="font-bold">30</span>/90
+                </div>
+                <div class="bg-black/60 backdrop-blur-sm px-4 py-2 rounded-lg border border-white/20">
+                    <span class="text-game-secondary">📍</span> Position: <span id="position" class="font-mono">0, 0, 0</span>
+                </div>
+            </div>
+            
+            <!-- Instructions -->
+            <div id="instructions" class="absolute top-6 right-6 bg-black/60 backdrop-blur-sm px-4 py-3 rounded-lg border border-white/20 text-sm space-y-1">
+                <div><kbd class="bg-white/20 px-2 py-1 rounded text-xs">WASD</kbd> - Move</div>
+                <div><kbd class="bg-white/20 px-2 py-1 rounded text-xs">Mouse</kbd> - Look</div>
+                <div><kbd class="bg-white/20 px-2 py-1 rounded text-xs">Click</kbd> - Shoot</div>
+                <div><kbd class="bg-white/20 px-2 py-1 rounded text-xs">Space</kbd> - Jump</div>
+                <div><kbd class="bg-white/20 px-2 py-1 rounded text-xs">Shift</kbd> - Run</div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module" src="/src/main.js"></script>
+</body>
+</html>

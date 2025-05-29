@@ -1,0 +1,25 @@
+{
+  "name": "open-world-fps",
+  "version": "1.0.0",
+  "description": "3D Open World FPS Game with Three.js",
+  "type": "module",
+  "main": "src/main.js",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "three": "^0.160.0",
+    "cannon-es": "^0.20.0"
+  },
+  "devDependencies": {
+    "vite": "^5.0.0",
+    "tailwindcss": "^4.1.0",
+    "@tailwindcss/vite": "^4.1.0"
+  },
+  "keywords": ["three.js", "fps", "game", "webgl", "3d"],
+  "author": "Your Name",
+  "license": "MIT"
+}
