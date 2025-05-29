@@ -10,36 +10,36 @@ export class TextureManager {
         this.textureConfigs = {
             // Ground/Terrain textures
             grass: {
-                baseUrl: '/textures/grass/',
+                baseUrl: '/textures/',
                 files: {
-                    diffuse: 'grass_diff_1k.jpg',
-                    normal: 'grass_nor_gl_1k.jpg',
-                    roughness: 'grass_rough_1k.jpg',
-                    ao: 'grass_ao_1k.jpg'
+                    diffuse: 'forest_ground_diff_1k.jpg',
+                    normal: 'forest_ground_nor_gl_1k.exr',
+                    roughness: 'forest_ground_rough_1k.exr',
+                    ao: 'forest_ground_ao_1k.jpg'
                 },
                 repeat: [16, 16],
                 roughness: 0.8
             },
 
             dirt: {
-                baseUrl: '/textures/dirt/',
+                baseUrl: '/textures/',
                 files: {
-                    diffuse: 'forest_ground_diff_1k.jpg',
-                    normal: 'forest_ground_nor_gl_1k.jpg',
-                    roughness: 'forest_ground_rough_1k.jpg',
-                    ao: 'forest_ground_ao_1k.jpg'
+                    diffuse: 'leafy_grass_diff_1k.jpg',
+                    normal: 'leafy_grass_nor_gl_1k.exr',
+                    roughness: 'leafy_grass_rough_1k.exr',
+                    ao: 'leafy_grass_ao_1k.jpg'
                 },
                 repeat: [12, 12],
                 roughness: 0.9
             },
 
             rock: {
-                baseUrl: '/textures/rock/',
+                baseUrl: '/textures/',
                 files: {
-                    diffuse: 'rocky_ground_diff_1k.jpg',
-                    normal: 'rocky_ground_nor_gl_1k.jpg',
-                    roughness: 'rocky_ground_rough_1k.jpg',
-                    ao: 'rocky_ground_ao_1k.jpg'
+                    diffuse: 'rock_ground_diff_1k.jpg',
+                    normal: 'rock_ground_nor_gl_1k.exr',
+                    roughness: 'rock_ground_rough_1k.exr',
+                    ao: 'rock_ground_ao_1k.jpg'
                 },
                 repeat: [8, 8],
                 roughness: 0.7
@@ -47,36 +47,36 @@ export class TextureManager {
 
             // Building textures
             concrete: {
-                baseUrl: '/textures/concrete/',
+                baseUrl: '/textures/',
                 files: {
-                    diffuse: 'concrete_wall_diff_1k.jpg',
-                    normal: 'concrete_wall_nor_gl_1k.jpg',
-                    roughness: 'concrete_wall_rough_1k.jpg',
-                    ao: 'concrete_wall_ao_1k.jpg'
+                    diffuse: 'concrete_wall_007_diff_1k.jpg',
+                    normal: 'concrete_wall_007_nor_gl_1k.exr',
+                    roughness: 'concrete_wall_007_rough_1k.exr',
+                    ao: 'concrete_wall_007_ao_1k.jpg'
                 },
                 repeat: [2, 2],
                 roughness: 0.8
             },
 
             brick: {
-                baseUrl: '/textures/brick/',
+                baseUrl: '/textures/',
                 files: {
-                    diffuse: 'brick_wall_diff_1k.jpg',
-                    normal: 'brick_wall_nor_gl_1k.jpg',
-                    roughness: 'brick_wall_rough_1k.jpg',
-                    ao: 'brick_wall_ao_1k.jpg'
+                    diffuse: 'mixed_brick_wall_diff_1k.jpg',
+                    normal: 'mixed_brick_wall_nor_gl_1k.exr',
+                    roughness: 'mixed_brick_wall_rough_1k.exr',
+                    ao: 'mixed_brick_wall_ao_1k.jpg'
                 },
                 repeat: [4, 4],
                 roughness: 0.7
             },
 
             metal: {
-                baseUrl: '/textures/metal/',
+                baseUrl: '/textures/',
                 files: {
                     diffuse: 'metal_plate_diff_1k.jpg',
-                    normal: 'metal_plate_nor_gl_1k.jpg',
-                    roughness: 'metal_plate_rough_1k.jpg',
-                    metallic: 'metal_plate_metal_1k.jpg',
+                    normal: 'metal_plate_nor_gl_1k.exr',
+                    roughness: 'metal_plate_rough_1k.exr',
+                    metallic: 'metal_plate_metal_1k.exr',
                     ao: 'metal_plate_ao_1k.jpg'
                 },
                 repeat: [3, 3],
@@ -86,24 +86,24 @@ export class TextureManager {
 
             // Tree textures
             bark: {
-                baseUrl: '/textures/bark/',
+                baseUrl: '/textures/',
                 files: {
-                    diffuse: 'tree_bark_diff_1k.jpg',
-                    normal: 'tree_bark_nor_gl_1k.jpg',
-                    roughness: 'tree_bark_rough_1k.jpg',
-                    ao: 'tree_bark_ao_1k.jpg'
+                    diffuse: 'pine_bark_diff_1k.jpg',
+                    normal: 'pine_bark_nor_gl_1k.exr',
+                    roughness: 'pine_bark_rough_1k.exr',
+                    ao: 'pine_bark_ao_1k.jpg'
                 },
                 repeat: [1, 3],
                 roughness: 0.9
             },
 
             leaves: {
-                baseUrl: '/textures/leaves/',
+                baseUrl: '/textures/',
                 files: {
-                    diffuse: 'leaves_diff_1k.jpg',
-                    normal: 'leaves_nor_gl_1k.jpg',
-                    roughness: 'leaves_rough_1k.jpg',
-                    ao: 'leaves_ao_1k.jpg'
+                    diffuse: 'leafy_grass_diff_1k.jpg',
+                    normal: 'leafy_grass_nor_gl_1k.exr',
+                    roughness: 'leafy_grass_rough_1k.exr',
+                    ao: 'leafy_grass_ao_1k.jpg'
                 },
                 repeat: [2, 2],
                 roughness: 0.8,
@@ -153,12 +153,19 @@ export class TextureManager {
     }
 
     loadTexture(url) {
+        console.log('🔍 Attempting to load texture:', url);
         return new Promise((resolve, reject) => {
             this.loader.load(
                 url,
-                resolve,
+                (texture) => {
+                    console.log('✅ Successfully loaded:', url);
+                    resolve(texture);
+                },
                 undefined,
-                reject
+                (error) => {
+                    console.error('❌ Failed to load texture:', url, error);
+                    reject(error);
+                }
             );
         });
     }
@@ -234,21 +241,6 @@ export class TextureManager {
         const buildingMaterials = ['concrete', 'brick', 'metal'];
         const randomType = buildingMaterials[Math.floor(Math.random() * buildingMaterials.length)];
         return this.getMaterial(randomType);
-    }
-
-    // Create blended terrain material for more realistic ground
-    createBlendedTerrainMaterial() {
-        const grassTextures = this.textures.get('grass');
-        const dirtTextures = this.textures.get('dirt');
-        const rockTextures = this.textures.get('rock');
-
-        if (!grassTextures) {
-            return this.getMaterial('grass');
-        }
-
-        // For now, return grass material - blending requires custom shaders
-        // TODO: Implement terrain blending shader
-        return this.getMaterial('grass');
     }
 
     // Dispose of all textures and materials

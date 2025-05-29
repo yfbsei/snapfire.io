@@ -29,7 +29,6 @@ export class Building {
     this.createMainStructure();
     this.createWindows();
     this.createRoof();
-    this.createDetails();
   }
 
   createMainStructure() {
@@ -168,15 +167,7 @@ export class Building {
   createRoof() {
     const { width, height, depth } = this.dimensions;
 
-    // Different roof types based on building type
-    if (this.buildingType === 'residential' && Math.random() > 0.5) {
-      this.createSlopedRoof(width, height, depth);
-    } else {
-      this.createFlatRoof(width, height, depth);
-    }
-  }
-
-  createFlatRoof(width, height, depth) {
+    // Simple flat roof with slight overhang
     const roofGeometry = new THREE.BoxGeometry(width + 1, 0.8, depth + 1);
 
     let roofMaterial;
@@ -195,129 +186,6 @@ export class Building {
     roof.name = 'roof-flat';
 
     this.meshes.push(roof);
-  }
-
-  createSlopedRoof(width, height, depth) {
-    // Create a simple triangular roof
-    const roofGeometry = new THREE.ConeGeometry(Math.max(width, depth) * 0.7, 4, 4);
-
-    let roofMaterial;
-    if (this.textureManager) {
-      roofMaterial = this.textureManager.getMaterial('brick');
-    } else {
-      roofMaterial = new THREE.MeshLambertMaterial({
-        color: 0x8B4513
-      });
-    }
-
-    const roof = new THREE.Mesh(roofGeometry, roofMaterial);
-    roof.position.set(this.position.x, height + 2, this.position.z);
-    roof.rotation.y = Math.PI / 4;
-    roof.castShadow = true;
-    roof.receiveShadow = true;
-    roof.name = 'roof-sloped';
-
-    this.meshes.push(roof);
-  }
-
-  createDetails() {
-    // Add architectural details based on building type
-    switch (this.buildingType) {
-      case 'office':
-        this.createOfficeDetails();
-        break;
-      case 'residential':
-        this.createResidentialDetails();
-        break;
-      case 'industrial':
-        this.createIndustrialDetails();
-        break;
-      case 'commercial':
-        this.createCommercialDetails();
-        break;
-    }
-  }
-
-  createOfficeDetails() {
-    // Add entrance canopy
-    const canopyGeometry = new THREE.BoxGeometry(6, 0.3, 2);
-    const canopyMaterial = this.textureManager ?
-      this.textureManager.getMaterial('metal') :
-      new THREE.MeshLambertMaterial({ color: 0x888888 });
-
-    const canopy = new THREE.Mesh(canopyGeometry, canopyMaterial);
-    canopy.position.set(
-      this.position.x,
-      3,
-      this.position.z + this.dimensions.depth / 2 + 1
-    );
-    canopy.castShadow = true;
-    canopy.name = 'canopy';
-
-    this.meshes.push(canopy);
-  }
-
-  createResidentialDetails() {
-    // Add balconies
-    const balconyCount = Math.floor(this.dimensions.height / 8);
-
-    for (let i = 0; i < balconyCount; i++) {
-      const balconyGeometry = new THREE.BoxGeometry(4, 0.2, 1.5);
-      const balconyMaterial = this.textureManager ?
-        this.textureManager.getMaterial('concrete') :
-        new THREE.MeshLambertMaterial({ color: 0xCCCCCC });
-
-      const balcony = new THREE.Mesh(balconyGeometry, balconyMaterial);
-      balcony.position.set(
-        this.position.x,
-        8 + i * 8,
-        this.position.z + this.dimensions.depth / 2 + 0.75
-      );
-      balcony.castShadow = true;
-      balcony.name = 'balcony';
-
-      this.meshes.push(balcony);
-    }
-  }
-
-  createIndustrialDetails() {
-    // Add industrial pipes/vents
-    const pipeGeometry = new THREE.CylinderGeometry(0.3, 0.3, this.dimensions.height * 0.3);
-    const pipeMaterial = this.textureManager ?
-      this.textureManager.getMaterial('metal') :
-      new THREE.MeshLambertMaterial({ color: 0x666666 });
-
-    const pipe = new THREE.Mesh(pipeGeometry, pipeMaterial);
-    pipe.position.set(
-      this.position.x + this.dimensions.width * 0.3,
-      this.dimensions.height + this.dimensions.height * 0.15,
-      this.position.z
-    );
-    pipe.castShadow = true;
-    pipe.name = 'pipe';
-
-    this.meshes.push(pipe);
-  }
-
-  createCommercialDetails() {
-    // Add storefront awning
-    const awningGeometry = new THREE.CylinderGeometry(3, 3, this.dimensions.width * 0.8, 8, 1, true, 0, Math.PI);
-    const awningMaterial = new THREE.MeshLambertMaterial({
-      color: 0xFF6B6B,
-      side: THREE.DoubleSide
-    });
-
-    const awning = new THREE.Mesh(awningGeometry, awningMaterial);
-    awning.position.set(
-      this.position.x,
-      4,
-      this.position.z + this.dimensions.depth / 2
-    );
-    awning.rotation.x = Math.PI;
-    awning.castShadow = true;
-    awning.name = 'awning';
-
-    this.meshes.push(awning);
   }
 
   // Fallback color generation for when texture manager isn't available
