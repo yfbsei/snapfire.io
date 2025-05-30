@@ -7,6 +7,7 @@ class GameApp {
     this.game = null;
     this.ui = null;
     this.isInitialized = false;
+    this.gameReady = false;
   }
 
   async init() {
@@ -52,14 +53,14 @@ class GameApp {
         console.log('🔗 UI connected to game');
       }
 
-      // Hide loading screen
+      // Hide loading screen and start screen
       this.ui.hideLoadingScreen();
-
-      // Start the game
-      this.game.start();
       this.ui.hideStartScreen();
 
-      console.log('✅ Game started successfully!');
+      // Game is now ready - waiting for user to click to lock mouse
+      this.gameReady = true;
+
+      console.log('✅ Game ready! Click in the game area to start playing');
     } catch (error) {
       console.error('❌ Failed to start game:', error);
 
@@ -74,13 +75,38 @@ class GameApp {
         this.game.dispose();
         this.game = null;
       }
+      this.gameReady = false;
     }
   }
 
   handleResize() {
-    if (this.game && this.game.isRunning) {
+    if (this.game && this.game.isGameRunning()) {
       this.game.handleResize();
     }
+  }
+
+  handleError(error) {
+    console.error('💥 Application error:', error);
+    if (this.ui) {
+      this.ui.showError('An error occurred. Check the console for details.');
+    }
+  }
+
+  dispose() {
+    console.log('🗑️ Disposing game app...');
+
+    if (this.game) {
+      this.game.dispose();
+      this.game = null;
+    }
+
+    if (this.ui) {
+      this.ui.dispose();
+      this.ui = null;
+    }
+
+    this.isInitialized = false;
+    this.gameReady = false;
   }
 }
 
@@ -88,20 +114,56 @@ class GameApp {
 document.addEventListener('DOMContentLoaded', async () => {
   console.log('📄 DOM Content Loaded');
 
+  let app = null;
+
   try {
-    const app = new GameApp();
+    app = new GameApp();
     await app.init();
 
     // Handle window resize
-    window.addEventListener('resize', () => app.handleResize());
+    window.addEventListener('resize', () => {
+      if (app) {
+        app.handleResize();
+      }
+    });
 
     // Global error handler
     window.addEventListener('error', (event) => {
-      console.error('💥 Global error:', event.error);
+      if (app) {
+        app.handleError(event.error);
+      }
+    });
+
+    // Handle unhandled promise rejections
+    window.addEventListener('unhandledrejection', (event) => {
+      console.error('💥 Unhandled promise rejection:', event.reason);
+      if (app) {
+        app.handleError(event.reason);
+      }
+    });
+
+    // Handle page unload
+    window.addEventListener('beforeunload', () => {
+      if (app) {
+        app.dispose();
+      }
     });
 
     console.log('🌟 Application ready');
   } catch (error) {
     console.error('💥 Critical error during app initialization:', error);
+
+    // Show critical error message
+    const errorDiv = document.createElement('div');
+    errorDiv.className = 'fixed inset-0 bg-red-900 text-white flex flex-col items-center justify-center z-50';
+    errorDiv.innerHTML = `
+      <h1 class="text-4xl font-bold mb-4">💥 Critical Error</h1>
+      <p class="text-xl mb-4">Failed to initialize the game</p>
+      <p class="text-gray-300 mb-4">${error.message}</p>
+      <button onclick="window.location.reload()" class="px-6 py-3 bg-red-600 hover:bg-red-500 rounded-lg font-bold">
+        Reload Page
+      </button>
+    `;
+    document.body.appendChild(errorDiv);
   }
 });

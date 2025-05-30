@@ -8,6 +8,7 @@ export class UI {
   init() {
     this.cacheElements();
     this.setupEventListeners();
+    this.updateStartScreen();
     console.log('🎨 UI initialized');
   }
 
@@ -36,10 +37,36 @@ export class UI {
 
     // Handle visibility change (tab switching)
     document.addEventListener('visibilitychange', () => {
-      if (document.hidden && this.game && this.game.isRunning) {
-        this.game.pause();
+      if (document.hidden && this.game && this.game.isGameRunning()) {
+        // When tab is hidden, exit pointer lock which will pause the game
+        document.exitPointerLock();
       }
     });
+  }
+
+  updateStartScreen() {
+    if (this.elements.startScreen) {
+      this.elements.startScreen.innerHTML = `
+        <h1 class="text-6xl font-black mb-4 text-transparent bg-gradient-to-r from-game-primary to-game-secondary bg-clip-text">
+          OPEN WORLD FPS
+        </h1>
+        <p class="text-xl mb-4 text-gray-300">Click START to initialize the game</p>
+        <p class="text-sm mb-8 text-gray-400">Then click anywhere in the game area to lock mouse and play</p>
+        <button id="startButton" class="px-8 py-4 bg-game-primary hover:bg-green-400 text-black font-bold text-xl rounded-lg transition-all duration-200 transform hover:scale-105 game-button">
+          START GAME
+        </button>
+      `;
+
+      // Re-cache the new button
+      this.elements.startButton = document.getElementById('startButton');
+      if (this.elements.startButton) {
+        this.elements.startButton.addEventListener('click', () => {
+          if (this.startGameCallback) {
+            this.startGameCallback();
+          }
+        });
+      }
+    }
   }
 
   onStartGame(callback) {
@@ -54,6 +81,9 @@ export class UI {
     if (this.elements.startScreen) {
       this.elements.startScreen.style.display = 'none';
     }
+
+    // Show initial instruction
+    this.showNotification('Click anywhere in the game area to lock mouse and start playing!', 'info');
   }
 
   showStartScreen() {
@@ -62,31 +92,9 @@ export class UI {
     }
   }
 
-  showPauseScreen() {
-    this.showStartScreen();
-    
-    if (this.elements.startScreen) {
-      this.elements.startScreen.innerHTML = `
-        <h1 class="text-6xl font-black mb-4 text-transparent bg-gradient-to-r from-red-500 to-orange-500 bg-clip-text">
-          GAME PAUSED
-        </h1>
-        <p class="text-xl mb-8 text-gray-300">Game paused - Click to resume</p>
-        <button id="resumeButton" class="px-8 py-4 bg-game-primary hover:bg-green-400 text-black font-bold text-xl rounded-lg transition-all duration-200 transform hover:scale-105 game-button">
-          RESUME GAME
-        </button>
-      `;
-      
-      document.getElementById('resumeButton').addEventListener('click', () => {
-        if (this.game) {
-          this.game.resume();
-        }
-      });
-    }
-  }
-
   showGameOverScreen() {
     this.showStartScreen();
-    
+
     if (this.elements.startScreen) {
       this.elements.startScreen.innerHTML = `
         <h1 class="text-6xl font-black mb-4 text-transparent bg-gradient-to-r from-red-600 to-red-800 bg-clip-text">
@@ -102,11 +110,11 @@ export class UI {
           </button>
         </div>
       `;
-      
+
       document.getElementById('restartButton').addEventListener('click', () => {
         window.location.reload();
       });
-      
+
       document.getElementById('menuButton').addEventListener('click', () => {
         window.location.reload();
       });
@@ -123,9 +131,9 @@ export class UI {
         <button class="ml-4 text-xl hover:text-gray-300" onclick="this.parentElement.parentElement.remove()">×</button>
       </div>
     `;
-    
+
     document.body.appendChild(errorDiv);
-    
+
     // Auto-remove after 5 seconds
     setTimeout(() => {
       if (errorDiv.parentElement) {
@@ -141,14 +149,14 @@ export class UI {
       warning: 'bg-yellow-600',
       error: 'bg-red-600'
     };
-    
+
     const icons = {
       info: 'ℹ️',
       success: '✅',
       warning: '⚠️',
       error: '❌'
     };
-    
+
     const notificationDiv = document.createElement('div');
     notificationDiv.className = `fixed top-4 left-1/2 transform -translate-x-1/2 ${colors[type]} text-white px-6 py-3 rounded-lg shadow-lg z-50 transition-all duration-300`;
     notificationDiv.innerHTML = `
@@ -157,19 +165,19 @@ export class UI {
         <span>${message}</span>
       </div>
     `;
-    
+
     document.body.appendChild(notificationDiv);
-    
+
     // Slide in animation
     setTimeout(() => {
       notificationDiv.style.transform = 'translate(-50%, 0)';
     }, 100);
-    
+
     // Auto-remove after 3 seconds
     setTimeout(() => {
       notificationDiv.style.transform = 'translate(-50%, -100px)';
       notificationDiv.style.opacity = '0';
-      
+
       setTimeout(() => {
         if (notificationDiv.parentElement) {
           notificationDiv.remove();
@@ -181,7 +189,7 @@ export class UI {
   updateHealth(health, maxHealth = 100) {
     if (this.elements.health) {
       this.elements.health.textContent = health;
-      
+
       // Color coding for health
       const healthPercent = health / maxHealth;
       if (healthPercent > 0.6) {
@@ -197,7 +205,7 @@ export class UI {
   updateAmmo(current, max) {
     if (this.elements.ammo) {
       this.elements.ammo.textContent = current;
-      
+
       // Color coding for ammo
       const ammoPercent = current / max;
       if (ammoPercent > 0.3) {
@@ -223,7 +231,7 @@ export class UI {
       <h2 class="text-2xl font-bold mb-2">Loading Game...</h2>
       <p class="text-gray-400">Generating world and initializing systems</p>
     `;
-    
+
     document.body.appendChild(loadingDiv);
   }
 
@@ -243,9 +251,9 @@ export class UI {
 
   dispose() {
     // Remove any created elements
-    const dynamicElements = document.querySelectorAll('[id*="notification"], [id*="error"], #loadingScreen');
+    const dynamicElements = document.querySelectorAll('[id*="notification"], [id*="error"], #loadingScreen, #pointerLockNotification');
     dynamicElements.forEach(el => el.remove());
-    
+
     console.log('🎨 UI disposed');
   }
 }
