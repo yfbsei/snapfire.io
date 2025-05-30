@@ -246,13 +246,6 @@ export class Game {
         this.player.shoot(this.scene);
       }
     });
-
-    // Pointer lock events
-    this.inputManager.onPointerLockChange((isLocked) => {
-      if (!isLocked && this.isRunning) {
-        this.pause();
-      }
-    });
   }
 
   start() {
@@ -263,36 +256,6 @@ export class Game {
     this.gameLoop();
 
     console.log('🎮 Enhanced game started');
-  }
-
-  pause() {
-    this.isRunning = false;
-    if (this.frameId) {
-      cancelAnimationFrame(this.frameId);
-      this.frameId = null;
-    }
-
-    // Show pause screen
-    const startScreen = document.getElementById('startScreen');
-    if (startScreen) {
-      startScreen.style.display = 'flex';
-      startScreen.innerHTML = `
-        <h1 class="text-6xl font-black mb-4 text-transparent bg-gradient-to-r from-red-500 to-orange-500 bg-clip-text">
-          GAME PAUSED
-        </h1>
-        <p class="text-xl mb-8 text-gray-300">Mouse pointer lock was lost</p>
-        <button id="resumeButton" class="px-8 py-4 bg-game-primary hover:bg-green-400 text-black font-bold text-xl rounded-lg transition-all duration-200 transform hover:scale-105">
-          RESUME GAME
-        </button>
-      `;
-
-      const resumeButton = document.getElementById('resumeButton');
-      if (resumeButton) {
-        resumeButton.addEventListener('click', () => {
-          this.resume();
-        });
-      }
-    }
   }
 
   resume() {

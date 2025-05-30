@@ -13,7 +13,7 @@ export const GameConfig = {
     SPEED: {
       WALK: 0.3,
       RUN: 0.5,
-      JUMP: 10
+      JUMP: 5
     },
     HEALTH: 100,
     AMMO: {
@@ -21,7 +21,7 @@ export const GameConfig = {
       MAX: 90
     },
     MOUSE_SENSITIVITY: 0.002,
-    JUMP_COOLDOWN: 200, // milliseconds between jumps
+    JUMP_COOLDOWN: 800, // milliseconds between jumps
     AIR_CONTROL: 0.3 // reduced air movement control
   },
 
@@ -55,7 +55,7 @@ export const GameConfig = {
     AMBIENT_COLOR: 0x404040,
     AMBIENT_INTENSITY: 0.6,
     SUN_COLOR: 0xffffff,
-    SUN_INTENSITY: 0.8
+    SUN_INTENSITY: 0.1
   },
 
   // Materials
