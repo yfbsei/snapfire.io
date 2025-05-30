@@ -1,10 +1,9 @@
 import * as THREE from 'three';
-import { EXRLoader } from 'three/examples/jsm/loaders/EXRLoader.js'; // ⬅️ Add this line
 
 export class TextureManager {
     constructor() {
         this.loader = new THREE.TextureLoader();
-        this.exrLoader = new EXRLoader();
+        this.exrLoader = null; // Will be loaded dynamically
         this.textures = new Map();
         this.materials = new Map();
 
@@ -12,7 +11,7 @@ export class TextureManager {
         this.textureConfigs = {
             // Ground/Terrain textures
             grass: {
-                baseUrl: '/textures/grass',
+                baseUrl: '/textures/grass/',
                 files: {
                     diffuse: 'forest_ground_diff_1k.jpg',
                     normal: 'forest_ground_nor_gl_1k.exr',
@@ -24,7 +23,7 @@ export class TextureManager {
             },
 
             dirt: {
-                baseUrl: '/textures/',
+                baseUrl: '/textures/dirt/',
                 files: {
                     diffuse: 'leafy_grass_diff_1k.jpg',
                     normal: 'leafy_grass_nor_gl_1k.exr',
@@ -36,7 +35,7 @@ export class TextureManager {
             },
 
             rock: {
-                baseUrl: '/textures/',
+                baseUrl: '/textures/rock/',
                 files: {
                     diffuse: 'rock_ground_diff_1k.jpg',
                     normal: 'rock_ground_nor_gl_1k.exr',
@@ -49,7 +48,7 @@ export class TextureManager {
 
             // Building textures
             concrete: {
-                baseUrl: '/textures/',
+                baseUrl: '/textures/concrete/',
                 files: {
                     diffuse: 'concrete_wall_007_diff_1k.jpg',
                     normal: 'concrete_wall_007_nor_gl_1k.exr',
@@ -61,7 +60,7 @@ export class TextureManager {
             },
 
             brick: {
-                baseUrl: '/textures/',
+                baseUrl: '/textures/brick/',
                 files: {
                     diffuse: 'mixed_brick_wall_diff_1k.jpg',
                     normal: 'mixed_brick_wall_nor_gl_1k.exr',
@@ -73,7 +72,7 @@ export class TextureManager {
             },
 
             metal: {
-                baseUrl: '/textures/',
+                baseUrl: '/textures/metal/',
                 files: {
                     diffuse: 'metal_plate_diff_1k.jpg',
                     normal: 'metal_plate_nor_gl_1k.exr',
@@ -88,7 +87,7 @@ export class TextureManager {
 
             // Tree textures
             bark: {
-                baseUrl: '/textures/',
+                baseUrl: '/textures/bark/',
                 files: {
                     diffuse: 'pine_bark_diff_1k.jpg',
                     normal: 'pine_bark_nor_gl_1k.exr',
@@ -100,7 +99,7 @@ export class TextureManager {
             },
 
             leaves: {
-                baseUrl: '/textures/',
+                baseUrl: '/textures/leaves/',
                 files: {
                     diffuse: 'leafy_grass_diff_1k.jpg',
                     normal: 'leafy_grass_nor_gl_1k.exr',
@@ -114,21 +113,53 @@ export class TextureManager {
         };
     }
 
+    async loadEXRLoader() {
+        if (this.exrLoader) return;
+
+        try {
+            // Try different import paths for EXRLoader based on Three.js version
+            let EXRLoader;
+
+            try {
+                // Modern Three.js (0.150+)
+                const module = await import('three/addons/loaders/EXRLoader.js');
+                EXRLoader = module.EXRLoader;
+            } catch (e) {
+                try {
+                    // Older Three.js (0.130-0.149)
+                    const module = await import('three/examples/jsm/loaders/EXRLoader.js');
+                    EXRLoader = module.EXRLoader;
+                } catch (e2) {
+                    console.warn('⚠️ EXRLoader not available, falling back to regular textures');
+                    return;
+                }
+            }
+
+            this.exrLoader = new EXRLoader();
+            console.log('✅ EXRLoader initialized successfully');
+        } catch (error) {
+            console.warn('⚠️ Failed to load EXRLoader:', error);
+        }
+    }
+
     async init() {
         console.log('🎨 Initializing Texture Manager...');
 
+        // Load EXR loader first
+        await this.loadEXRLoader();
+
         // Load all texture sets
+        const loadPromises = [];
         for (const [name, config] of Object.entries(this.textureConfigs)) {
-            try {
-                await this.loadTextureSet(name, config);
-                console.log(`✅ Loaded texture set: ${name}`);
-            } catch (error) {
-                console.warn(`⚠️ Failed to load texture set ${name}:`, error);
-                // Create fallback material
-                this.createFallbackMaterial(name);
-            }
+            loadPromises.push(
+                this.loadTextureSet(name, config).catch(error => {
+                    console.warn(`⚠️ Failed to load texture set ${name}:`, error);
+                    this.createFallbackMaterial(name);
+                })
+            );
         }
 
+        await Promise.allSettled(loadPromises);
         console.log('✅ Texture Manager initialized');
     }
 
@@ -138,54 +169,108 @@ export class TextureManager {
 
         // Load each texture file
         for (const [type, filename] of Object.entries(config.files)) {
-            const url = config.baseUrl + filename;
+            const url = `${config.baseUrl}${filename}`;
             promises.push(
-                this.loadTexture(url).then(texture => {
-                    textures[type] = texture;
-                    this.configureTexture(texture, config);
+                this.loadTexture(url, type).then(texture => {
+                    if (texture) {
+                        textures[type] = texture;
+                        this.configureTexture(texture, config, type);
+                    }
+                }).catch(error => {
+                    console.warn(`⚠️ Failed to load ${type} texture for ${name}:`, error);
+                    // Continue without this texture
                 })
             );
         }
 
-        await Promise.all(promises);
-        this.textures.set(name, textures);
+        await Promise.allSettled(promises);
 
-        // Create material from loaded textures
-        this.createMaterial(name, textures, config);
+        // Only create material if we have at least a diffuse texture
+        if (textures.diffuse || Object.keys(textures).length > 0) {
+            this.textures.set(name, textures);
+            this.createMaterial(name, textures, config);
+            console.log(`✅ Loaded texture set: ${name} (${Object.keys(textures).length} textures)`);
+        } else {
+            throw new Error(`No textures loaded for ${name}`);
+        }
     }
 
-    loadTexture(url) {
-        console.log('🔍 Attempting to load texture:', url);
+    async loadTexture(url, type) {
         const isEXR = url.toLowerCase().endsWith('.exr');
+
+        // Skip EXR files if loader is not available
+        if (isEXR && !this.exrLoader) {
+            console.warn(`⚠️ Skipping EXR texture (no loader): ${url}`);
+            return null;
+        }
+
         const loader = isEXR ? this.exrLoader : this.loader;
 
         return new Promise((resolve, reject) => {
+            const timeout = setTimeout(() => {
+                reject(new Error(`Texture loading timeout: ${url}`));
+            }, 10000); // 10 second timeout
+
             loader.load(
                 url,
                 (texture) => {
-                    console.log('✅ Successfully loaded:', url);
+                    clearTimeout(timeout);
+                    console.log(`✅ Successfully loaded: ${url}`);
 
                     if (isEXR) {
-                        // EXR-specific configuration
-                        texture.encoding = THREE.LinearEncoding;
-                        texture.type = THREE.FloatType;
-                        texture.minFilter = THREE.LinearFilter;
-                        texture.magFilter = THREE.LinearFilter;
-                        texture.generateMipmaps = false;
+                        this.configureEXRTexture(texture, type);
+                    } else {
+                        this.configureRegularTexture(texture, type);
                     }
 
                     resolve(texture);
                 },
-                undefined,
+                (progress) => {
+                    // Optional: handle loading progress
+                },
                 (error) => {
-                    console.error('❌ Failed to load texture:', url, error);
+                    clearTimeout(timeout);
+                    console.error(`❌ Failed to load texture: ${url}`, error);
                     reject(error);
                 }
             );
         });
     }
 
-    configureTexture(texture, config) {
+    configureEXRTexture(texture, type) {
+        // Configure EXR textures based on Three.js version
+        if (THREE.LinearSRGBColorSpace !== undefined) {
+            // Three.js 0.152+
+            texture.colorSpace = type === 'diffuse' ? THREE.SRGBColorSpace : THREE.LinearSRGBColorSpace;
+        } else if (THREE.LinearEncoding !== undefined) {
+            // Three.js 0.150-0.151
+            texture.encoding = type === 'diffuse' ? THREE.sRGBEncoding : THREE.LinearEncoding;
+        }
+
+        // EXR-specific settings
+        texture.type = THREE.FloatType;
+        texture.minFilter = THREE.LinearFilter;
+        texture.magFilter = THREE.LinearFilter;
+        texture.generateMipmaps = false;
+        texture.flipY = false; // EXR files usually don't need flipping
+    }
+
+    configureRegularTexture(texture, type) {
+        // Configure regular textures
+        if (THREE.SRGBColorSpace !== undefined) {
+            // Three.js 0.152+
+            texture.colorSpace = type === 'diffuse' ? THREE.SRGBColorSpace : THREE.LinearSRGBColorSpace;
+        } else if (THREE.sRGBEncoding !== undefined) {
+            // Three.js 0.150-0.151
+            texture.encoding = type === 'diffuse' ? THREE.sRGBEncoding : THREE.LinearEncoding;
+        }
+
+        texture.generateMipmaps = true;
+        texture.minFilter = THREE.LinearMipmapLinearFilter;
+        texture.magFilter = THREE.LinearFilter;
+    }
+
+    configureTexture(texture, config, type) {
         // Set texture repeat
         if (config.repeat) {
             texture.wrapS = THREE.RepeatWrapping;
@@ -194,32 +279,38 @@ export class TextureManager {
         }
 
         // Improve texture quality
-        texture.anisotropy = 16;
-        texture.generateMipmaps = true;
-        texture.minFilter = THREE.LinearMipmapLinearFilter;
-        texture.magFilter = THREE.LinearFilter;
+        if (texture.anisotropy !== undefined) {
+            texture.anisotropy = Math.min(16, texture.image?.width || 16);
+        }
     }
 
     createMaterial(name, textures, config) {
-        const material = new THREE.MeshStandardMaterial({
+        const materialProps = {
+            // Basic maps
             map: textures.diffuse || null,
             normalMap: textures.normal || null,
             roughnessMap: textures.roughness || null,
             aoMap: textures.ao || null,
             metalnessMap: textures.metallic || null,
 
-            // Set material properties
+            // Material properties
             roughness: config.roughness || 0.5,
             metalness: config.metalness || 0.0,
 
             // Handle transparency
             transparent: config.transparent || false,
-            alphaTest: config.transparent ? 0.5 : undefined,
+            side: config.transparent ? THREE.DoubleSide : THREE.FrontSide,
 
             // Enable AO if available
             aoMapIntensity: textures.ao ? 1.0 : 0
-        });
+        };
 
+        // Set alpha test for transparent materials
+        if (config.transparent) {
+            materialProps.alphaTest = 0.5;
+        }
+
+        const material = new THREE.MeshStandardMaterial(materialProps);
         this.materials.set(name, material);
         return material;
     }
@@ -239,7 +330,8 @@ export class TextureManager {
 
         const material = new THREE.MeshStandardMaterial({
             color: colors[name] || 0x888888,
-            roughness: 0.8
+            roughness: 0.8,
+            metalness: name === 'metal' ? 0.9 : 0.0
         });
 
         this.materials.set(name, material);
@@ -248,7 +340,13 @@ export class TextureManager {
 
     // Get material by name
     getMaterial(name) {
-        return this.materials.get(name) || this.materials.get('grass'); // Default fallback
+        const material = this.materials.get(name);
+        if (!material) {
+            console.warn(`⚠️ Material '${name}' not found, using fallback`);
+            this.createFallbackMaterial(name);
+            return this.materials.get(name);
+        }
+        return material;
     }
 
     // Get a random building material
@@ -258,23 +356,45 @@ export class TextureManager {
         return this.getMaterial(randomType);
     }
 
+    // Check if a texture set is loaded
+    isTextureSetLoaded(name) {
+        return this.materials.has(name);
+    }
+
+    // Get loading status
+    getLoadingStatus() {
+        const total = Object.keys(this.textureConfigs).length;
+        const loaded = this.materials.size;
+        return {
+            total,
+            loaded,
+            percentage: (loaded / total) * 100
+        };
+    }
+
     // Dispose of all textures and materials
     dispose() {
+        console.log('🎨 Disposing Texture Manager...');
+
         // Dispose textures
         for (const textureSet of this.textures.values()) {
             for (const texture of Object.values(textureSet)) {
-                texture.dispose();
+                if (texture && texture.dispose) {
+                    texture.dispose();
+                }
             }
         }
 
         // Dispose materials
         for (const material of this.materials.values()) {
-            material.dispose();
+            if (material && material.dispose) {
+                material.dispose();
+            }
         }
 
         this.textures.clear();
         this.materials.clear();
 
-        console.log('🎨 Texture Manager disposed');
+        console.log('✅ Texture Manager disposed');
     }
 }
