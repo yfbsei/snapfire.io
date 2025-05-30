@@ -1,8 +1,10 @@
 import * as THREE from 'three';
+import { EXRLoader } from 'three/examples/jsm/loaders/EXRLoader.js'; // ⬅️ Add this line
 
 export class TextureManager {
     constructor() {
         this.loader = new THREE.TextureLoader();
+        this.exrLoader = new EXRLoader();
         this.textures = new Map();
         this.materials = new Map();
 
@@ -10,7 +12,7 @@ export class TextureManager {
         this.textureConfigs = {
             // Ground/Terrain textures
             grass: {
-                baseUrl: '/textures/',
+                baseUrl: '/textures/grass',
                 files: {
                     diffuse: 'forest_ground_diff_1k.jpg',
                     normal: 'forest_ground_nor_gl_1k.exr',
@@ -154,11 +156,24 @@ export class TextureManager {
 
     loadTexture(url) {
         console.log('🔍 Attempting to load texture:', url);
+        const isEXR = url.toLowerCase().endsWith('.exr');
+        const loader = isEXR ? this.exrLoader : this.loader;
+
         return new Promise((resolve, reject) => {
-            this.loader.load(
+            loader.load(
                 url,
                 (texture) => {
                     console.log('✅ Successfully loaded:', url);
+
+                    if (isEXR) {
+                        // EXR-specific configuration
+                        texture.encoding = THREE.LinearEncoding;
+                        texture.type = THREE.FloatType;
+                        texture.minFilter = THREE.LinearFilter;
+                        texture.magFilter = THREE.LinearFilter;
+                        texture.generateMipmaps = false;
+                    }
+
                     resolve(texture);
                 },
                 undefined,
