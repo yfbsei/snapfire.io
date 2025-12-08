@@ -4,12 +4,12 @@ import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial';
 import { Color3 } from '@babylonjs/core/Maths/math.color';
 import { Vector3 } from '@babylonjs/core/Maths/math.vector';
 import { ArcRotateCamera } from '@babylonjs/core/Cameras/arcRotateCamera';
-import { PhysicsAggregate } from '@babylonjs/core/Physics/v2/physicsAggregate';
-import { PhysicsShapeType } from '@babylonjs/core/Physics/v2/IPhysicsEnginePlugin';
 import { ShadowGenerator } from '@babylonjs/core/Lights/Shadows/shadowGenerator';
 import { SceneLoader } from '@babylonjs/core/Loading/sceneLoader';
 import { AbstractMesh } from '@babylonjs/core/Meshes/abstractMesh';
 import { AnimationGroup } from '@babylonjs/core/Animations/animationGroup';
+import { TransformNode } from '@babylonjs/core/Meshes/transformNode';
+import { PhysicsCharacterController, CharacterSupportedState } from '@babylonjs/core/Physics/v2/characterController';
 
 // Import GLTF loader
 import '@babylonjs/loaders/glTF';
@@ -31,9 +31,9 @@ export class ThirdPersonPlayer {
     private scene: Scene;
     private camera: ArcRotateCamera;
     private playerMesh: AbstractMesh | null = null;
-    private colliderMesh: any;
-    private rotationNode: any; // TransformNode for rotation (not affected by physics)
-    private physicsAggregate: PhysicsAggregate;
+    private displayCapsule: AbstractMesh;
+    private rotationNode: TransformNode;
+    private characterController: PhysicsCharacterController;
     private inputMap: { [key: string]: boolean } = {};
     private characterSkeleton: any = null;
 
@@ -44,26 +44,32 @@ export class ThirdPersonPlayer {
 
     // State machine
     private state: CharacterState = CharacterState.IDLE;
-    private previousState: CharacterState = CharacterState.IDLE;
+    private _previousState: CharacterState = CharacterState.IDLE;
 
     // Movement settings
     private walkSpeed = 3;
     private sprintSpeed = 6;
     private crouchSpeed = 1.5;
     private jumpForce = 8;
+    private gravity = new Vector3(0, -20, 0);
     private isGrounded = false;
-    private wasGrounded = false;
     private currentSpeed = 0;
     private isSprinting = false;
     private isCrouching = false;
-    private isJumping = false;
-    private jumpCooldown = false;
-    private jumpInitiatedTime: number = 0; // Track when jump started
 
-    // Ground detection tracking
-    private lastGroundedTime: number = 0;
-    private lastAirborneTime: number = 0;
-    private groundedVelocityThreshold: number = 1.5; // Increased from 0.5
+    // Jump state tracking
+    private jumpRequested = false;
+    private inJumpState = false;
+    private groundedFrameCount = 0;  // Counter to stabilize ground detection
+
+    // Capsule dimensions
+    private capsuleHeight = 1.8;
+    private capsuleRadius = 0.3;
+
+    // Model alignment offset - adjusts the model's Y position to align feet with ground
+    // Negative values move the model down (use if character appears to float)
+    // Positive values move the model up (use if feet clip through ground)
+    private modelGroundOffset = -0.15;  // Compensate for physics gap
 
     // Bone name mapping: animation library (DEF-*) -> character skeleton
     private static readonly BONE_MAPPING: { [key: string]: string } = {
@@ -170,55 +176,46 @@ export class ThirdPersonPlayer {
         this.scene = scene;
         this.camera = camera;
 
-        // Create invisible collider mesh for physics
-        this.colliderMesh = MeshBuilder.CreateCapsule(
-            'playerCollider',
+        // Create display capsule (visible mesh that follows the controller)
+        this.displayCapsule = MeshBuilder.CreateCapsule(
+            'playerDisplay',
             {
-                height: 1.8,
-                radius: 0.3,
+                height: this.capsuleHeight,
+                radius: this.capsuleRadius,
                 subdivisions: 16
             },
             scene
         );
+        this.displayCapsule.isVisible = false; // Hide the capsule, we'll show the character model
 
-        // Position collider above terrain
-        this.colliderMesh.position = new Vector3(0, 20, 0);
-        this.colliderMesh.isVisible = false;
+        // Initial position
+        const startPosition = new Vector3(0, 20, 0);
 
-        // Add physics to collider
-        this.physicsAggregate = new PhysicsAggregate(
-            this.colliderMesh,
-            PhysicsShapeType.CAPSULE,
+        // Create PhysicsCharacterController with capsule shape
+        this.characterController = new PhysicsCharacterController(
+            startPosition,
             {
-                mass: 1,
-                restitution: 0.1,
-                friction: 0.5
+                capsuleHeight: this.capsuleHeight,
+                capsuleRadius: this.capsuleRadius
             },
             scene
         );
 
-        // Lock rotation so player doesn't fall over
-        this.physicsAggregate.body.setAngularDamping(1000);
-        this.physicsAggregate.body.disablePreStep = false;
+        // Create a rotation node for the character model
+        // This allows us to rotate the character independently of physics
+        this.rotationNode = new TransformNode('rotationNode', scene);
 
-        // Lock all rotational axes to prevent tipping
-        this.physicsAggregate.body.setMassProperties({
-            inertia: new Vector3(0, 0, 0)
-        });
+        // Initialize display mesh and rotation node at controller position
+        this.displayCapsule.position.copyFrom(startPosition);
+        this.rotationNode.position.copyFrom(startPosition);
 
-        // Create a rotation wrapper node that's not affected by physics
-        // This allows us to rotate the character model independently
-        this.rotationNode = MeshBuilder.CreateBox('rotationNode', { size: 0.01 }, scene);
-        this.rotationNode.isVisible = false;
-        this.rotationNode.parent = this.colliderMesh;
-
-        // Setup camera to follow collider
+        // Setup camera to follow display capsule
         this.setupCamera();
 
         // Setup input controls
         this.setupInputControls();
 
-        // Update loop
+        // Update loop - using onBeforePhysicsObservable for physics-based updates
         this.scene.onBeforeRenderObservable.add(() => {
             this.update();
         });
@@ -244,10 +241,17 @@ export class ThirdPersonPlayer {
                 this.playerMesh = result.meshes[0];
                 this.playerMesh.scaling = new Vector3(1, 1, 1);
 
-                // Parent to rotation node (which is parented to collider)
+                // Parent to rotation node
                 this.playerMesh.parent = this.rotationNode;
-                this.playerMesh.position = new Vector3(0, -0.9, 0);
-                this.playerMesh.rotation.y = Math.PI; // Face forward
+
+                // Position model so feet align with capsule bottom
+                // The capsule center is at the controller position
+                // Capsule bottom is at: position.y - capsuleHeight/2
+                // The model's pivot/origin is typically at the root bone (hip level)
+                // We need to offset by capsuleHeight/2 to bring the model down to capsule bottom
+                // modelGroundOffset further adjusts for physics gap and model-specific alignment
+                this.playerMesh.position = new Vector3(0, -this.capsuleHeight / 2 + this.modelGroundOffset, 0);
+                this.playerMesh.rotation.y = 0; // Face forward
 
                 result.meshes.forEach(mesh => {
                     if (mesh) {
@@ -271,13 +275,13 @@ export class ThirdPersonPlayer {
             console.error('Error loading Superhero_Female model:', error);
             const fallbackMesh = MeshBuilder.CreateCapsule(
                 'playerFallback',
-                { height: 1.8, radius: 0.3 },
+                { height: this.capsuleHeight, radius: this.capsuleRadius },
                 this.scene
             );
             const material = new StandardMaterial('fallbackMaterial', this.scene);
             material.diffuseColor = new Color3(0.2, 0.5, 0.8);
             fallbackMesh.material = material;
-            fallbackMesh.parent = this.colliderMesh;
+            fallbackMesh.parent = this.rotationNode;
             this.playerMesh = fallbackMesh;
         }
     }
@@ -397,10 +401,14 @@ export class ThirdPersonPlayer {
     }
 
     private setupCamera() {
-        this.camera.lockedTarget = this.colliderMesh;
+        // PUBG-style: Camera follows and rotates around character
+        this.camera.lockedTarget = this.displayCapsule;
         this.camera.radius = 5;
         this.camera.lowerRadiusLimit = 2;
         this.camera.upperRadiusLimit = 15;
+
+        // Enable mouse rotation for PUBG-style camera
+        this.camera.attachControl(this.scene.getEngine().getRenderingCanvas()!, true);
     }
 
     private setupInputControls() {
@@ -414,55 +422,6 @@ export class ThirdPersonPlayer {
                     break;
             }
         });
-    }
-
-    /**
-     * Check if character is grounded using velocity-based detection
-     * This approach checks if vertical velocity is near zero and position is stable
-     */
-    private checkGrounded(): boolean {
-        if (!this.physicsAggregate?.body) return false;
-
-        // If we're actively jumping UPWARD, force not-grounded
-        // (Once descending, allow ground detection for landing)
-        if (this.isJumping) {
-            const velocity = this.physicsAggregate.body.getLinearVelocity();
-            // Stay not-grounded for at least 300ms after jump initiation
-            const minJumpTime = 300;
-            const jumpElapsed = Date.now() - this.jumpInitiatedTime;
-            if (jumpElapsed < minJumpTime || velocity.y > 0) {
-                return false; // Still in jump phase
-            }
-            // Going down and enough time has passed - allow landing detection below
-        }
-
-        const velocity = this.physicsAggregate.body.getLinearVelocity();
-        const verticalVelocity = Math.abs(velocity.y);
-
-        // Track when we were last in the air
-        if (verticalVelocity > this.groundedVelocityThreshold) {
-            this.lastAirborneTime = Date.now();
-        }
-
-        // Must have low vertical velocity
-        const hasLowVerticalVelocity = verticalVelocity < this.groundedVelocityThreshold;
-
-        // Must have been airborne for at least 200ms before we can land
-        // (prevents detecting as grounded at peak of jump)
-        const minAirTime = 200;
-        const wasAirborneRecently = (Date.now() - this.lastAirborneTime) < minAirTime;
-
-        // Only grounded if low velocity AND either:
-        // - we haven't been airborne recently, OR
-        // - we've been grounded long enough
-        const isGrounded = hasLowVerticalVelocity && !wasAirborneRecently && this.colliderMesh.position.y > -5;
-
-        // Track grounded time for stable detection
-        if (isGrounded) {
-            this.lastGroundedTime = Date.now();
-        }
-
-        return isGrounded;
     }
 
     /**
@@ -498,7 +457,7 @@ export class ThirdPersonPlayer {
     private setState(newState: CharacterState): void {
         if (this.state === newState) return;
 
-        this.previousState = this.state;
+        this._previousState = this.state;
         this.state = newState;
 
         const animInfo = this.getAnimationForState(newState);
@@ -511,104 +470,43 @@ export class ThirdPersonPlayer {
     }
 
     /**
-     * Update character state based on physics and input
+     * Calculate desired velocity based on input, state, and support
      */
-    private updateState(): void {
-        const velocity = this.physicsAggregate.body.getLinearVelocity();
-        const verticalVelocity = velocity.y;
+    private getDesiredVelocity(
+        deltaTime: number,
+        supportState: CharacterSupportedState,
+        currentVelocity: Vector3
+    ): Vector3 {
+        // PUBG-style: W moves in direction camera is LOOKING
 
-        // Store previous grounded state
-        this.wasGrounded = this.isGrounded;
-        this.isGrounded = this.checkGrounded();
+        // Get where camera is looking (its forward direction)
+        // For ArcRotateCamera, getDirection(Forward) points TOWARD the target (character)
+        // We need to negate it to get the direction AWAY from camera
+        const cameraForward = this.camera.getDirection(Vector3.Forward());
+        const forward = new Vector3(-cameraForward.x, 0, -cameraForward.z);
+        forward.normalize();
 
-        // Get movement input
-        const isMoving = this.currentSpeed > 0.5;
-
-        // Check crouch input
-        this.isCrouching = this.inputMap['c'] || this.inputMap['control'] || false;
-
-        // State machine logic
-        if (!this.isGrounded) {
-            // In the air
-            if (this.state === CharacterState.JUMP_START) {
-                // Stay in jump start briefly, then transition
-                if (verticalVelocity < 0) {
-                    this.setState(CharacterState.FALLING);
-                } else {
-                    this.setState(CharacterState.JUMPING);
-                }
-            } else if (verticalVelocity > 0.5) {
-                this.setState(CharacterState.JUMPING);
-            } else {
-                this.setState(CharacterState.FALLING);
-            }
-        } else {
-            // On the ground
-            // Reset jump flags when grounded
-            if (this.isJumping || this.jumpCooldown) {
-                // Small delay before allowing another jump
-                if (!this.wasGrounded) {
-                    // Just landed - set landing state and schedule reset
-                    this.setState(CharacterState.LANDING);
-                    this.isJumping = false;
-
-                    setTimeout(() => {
-                        this.jumpCooldown = false;
-                    }, 200);
-                } else {
-                    // Already on ground, reset immediately if cooldown expired
-                    this.isJumping = false;
-                }
-            }
-
-            // Normal ground movement (skip if in landing animation)
-            if (this.state !== CharacterState.LANDING) {
-                if (this.isCrouching) {
-                    if (isMoving) {
-                        this.setState(CharacterState.CROUCH_WALK);
-                    } else {
-                        this.setState(CharacterState.CROUCH_IDLE);
-                    }
-                } else if (isMoving) {
-                    if (this.isSprinting) {
-                        this.setState(CharacterState.SPRINT);
-                    } else {
-                        this.setState(CharacterState.WALK);
-                    }
-                } else {
-                    this.setState(CharacterState.IDLE);
-                }
-            }
-        }
-    }
-
-    private update() {
-        if (!this.physicsAggregate || !this.physicsAggregate.body) return;
-
-        const body = this.physicsAggregate.body;
-        const velocity = body.getLinearVelocity();
-
-        // Get camera forward and right directions
-        const cameraForward = this.camera.getForwardRay().direction.clone();
-        cameraForward.y = 0;
-        cameraForward.normalize();
-
-        const cameraRight = Vector3.Cross(cameraForward, Vector3.Up()).normalize();
+        // Right is perpendicular to forward (90° clockwise when viewed from above)
+        const right = new Vector3(forward.z, 0, -forward.x);
 
         // Calculate movement direction based on input
         let moveDirection = Vector3.Zero();
 
         if (this.inputMap['w'] || this.inputMap['arrowup']) {
-            moveDirection.addInPlace(cameraForward);
+            // W: Move away from camera (forward)
+            moveDirection.addInPlace(forward);
         }
         if (this.inputMap['s'] || this.inputMap['arrowdown']) {
-            moveDirection.subtractInPlace(cameraForward);
+            // S: Move toward camera (backward)
+            moveDirection.subtractInPlace(forward);
         }
         if (this.inputMap['a'] || this.inputMap['arrowleft']) {
-            moveDirection.subtractInPlace(cameraRight);
+            // A: Move left
+            moveDirection.subtractInPlace(right);
         }
         if (this.inputMap['d'] || this.inputMap['arrowright']) {
-            moveDirection.addInPlace(cameraRight);
+            // D: Move right
+            moveDirection.addInPlace(right);
         }
 
         // Normalize movement direction
@@ -616,10 +514,9 @@ export class ThirdPersonPlayer {
         if (isMoving) {
             moveDirection.normalize();
 
-            // Rotate the ROTATION NODE to face movement direction
-            // (playerMesh is parented to rotationNode, which is parented to collider)
-            // Negate X to fix left/right direction
-            const targetAngle = Math.atan2(-moveDirection.x, moveDirection.z);
+            // Rotate the rotation node to face movement direction
+            // Standard pattern: atan2(x, z) - no negative sign
+            const targetAngle = Math.atan2(moveDirection.x, moveDirection.z);
 
             // Smooth rotation interpolation
             let currentAngle = this.rotationNode.rotation.y;
@@ -632,12 +529,10 @@ export class ThirdPersonPlayer {
             this.rotationNode.rotation.y = currentAngle + (targetAngle - currentAngle) * 0.15;
         }
 
-        // Debug: Log jump state periodically
-        if (this.inputMap[' ']) {
-            console.log('Space pressed - isGrounded:', this.isGrounded, 'isJumping:', this.isJumping, 'jumpCooldown:', this.jumpCooldown, 'isCrouching:', this.isCrouching);
-        }
-
-        // Check sprint input
+        // Check sprint/crouch input - only allow crouch when grounded
+        // This prevents the mid-air crouch appearance
+        const wantsToCrouch = this.inputMap['c'] || this.inputMap['control'] || false;
+        this.isCrouching = wantsToCrouch && this.isGrounded;
         this.isSprinting = (this.inputMap['shift'] || false) && !this.isCrouching;
 
         // Determine movement speed based on state
@@ -648,58 +543,158 @@ export class ThirdPersonPlayer {
             currentMoveSpeed = this.sprintSpeed;
         }
 
-        // Apply movement
-        const newVelocity = new Vector3(
+        // Calculate horizontal velocity
+        const horizontalVelocity = new Vector3(
             moveDirection.x * currentMoveSpeed,
-            velocity.y,
+            0,
             moveDirection.z * currentMoveSpeed
         );
 
-        body.setLinearVelocity(newVelocity);
-
-        // Calculate current horizontal speed
-        const horizontalVelocity = new Vector3(velocity.x, 0, velocity.z);
+        // Store current speed for state machine
         this.currentSpeed = horizontalVelocity.length();
 
-        // Update state machine FIRST to set isGrounded correctly
-        this.updateState();
+        // Calculate vertical velocity based on support state
+        let verticalVelocity = currentVelocity.y;
 
-        // Handle jump input (after state update so isGrounded is correct)
-        if ((this.inputMap[' '] || this.inputMap['space']) &&
-            this.isGrounded &&
-            !this.isJumping &&
-            !this.jumpCooldown &&
-            !this.isCrouching) {
-
-            this.isJumping = true;
-            this.jumpCooldown = true;
-            this.jumpInitiatedTime = Date.now(); // Track jump start time
-            this.setState(CharacterState.JUMP_START);
-
-            // Apply jump impulse after short delay for animation sync
-            setTimeout(() => {
-                if (this.physicsAggregate?.body) {
-                    const vel = this.physicsAggregate.body.getLinearVelocity();
-                    vel.y = this.jumpForce;
-                    this.physicsAggregate.body.setLinearVelocity(vel);
-                }
-            }, 50);
+        // Use frame counting to stabilize ground detection
+        // This prevents flickering between grounded/falling states when slightly above ground
+        if (supportState === CharacterSupportedState.SUPPORTED) {
+            this.groundedFrameCount++;
+        } else {
+            this.groundedFrameCount = 0;
         }
 
+        // Consider grounded after a few consecutive frames of support
+        // OR if we're not in a jump and have any support
+        const isNowGrounded = supportState === CharacterSupportedState.SUPPORTED ||
+            (this.groundedFrameCount > 0 && !this.inJumpState);
+
+        if (isNowGrounded) {
+            // On ground
+            this.isGrounded = true;
+
+            // Handle jump request
+            if (this.jumpRequested && !this.isCrouching) {
+                verticalVelocity = this.jumpForce;
+                this.inJumpState = true;
+                this.jumpRequested = false;
+                this.groundedFrameCount = 0;  // Reset ground counter on jump
+                this.setState(CharacterState.JUMP_START);
+            } else {
+                // Reset jump state when grounded
+                if (this.inJumpState) {
+                    this.inJumpState = false;
+                    this.setState(CharacterState.LANDING);
+                    // After a short delay, return to normal ground state
+                    setTimeout(() => {
+                        if (this.isGrounded && this.state === CharacterState.LANDING) {
+                            this.updateGroundState();
+                        }
+                    }, 200);
+                } else if (this.state !== CharacterState.LANDING) {
+                    this.updateGroundState();
+                }
+
+                // Small downward velocity to keep grounded
+                verticalVelocity = -0.5;  // Slightly stronger to maintain ground contact
+            }
+        } else {
+            // In the air
+            this.isGrounded = false;
+
+            // Apply gravity
+            verticalVelocity += this.gravity.y * deltaTime;
+
+            // Cap fall speed
+            verticalVelocity = Math.max(verticalVelocity, -30);
+
+            // Only switch to air states if we've been in the air for a bit
+            // This prevents brief state flickers
+            if (this.groundedFrameCount === 0) {
+                if (verticalVelocity > 0.5) {
+                    this.setState(CharacterState.JUMPING);
+                } else if (verticalVelocity < -1.0) {
+                    // Only show falling animation when actually falling significantly
+                    this.setState(CharacterState.FALLING);
+                }
+            }
+        }
+
+        return new Vector3(horizontalVelocity.x, verticalVelocity, horizontalVelocity.z);
+    }
+
+    /**
+     * Update ground state based on movement
+     */
+    private updateGroundState(): void {
+        const isMoving = this.currentSpeed > 0.5;
+
+        if (this.isCrouching) {
+            if (isMoving) {
+                this.setState(CharacterState.CROUCH_WALK);
+            } else {
+                this.setState(CharacterState.CROUCH_IDLE);
+            }
+        } else if (isMoving) {
+            if (this.isSprinting) {
+                this.setState(CharacterState.SPRINT);
+            } else {
+                this.setState(CharacterState.WALK);
+            }
+        } else {
+            this.setState(CharacterState.IDLE);
+        }
+    }
+
+    private update() {
+        // Get delta time
+        const deltaTime = this.scene.getEngine().getDeltaTime() / 1000;
+
+        // Handle jump input
+        if ((this.inputMap[' '] || this.inputMap['space']) && this.isGrounded && !this.isCrouching) {
+            this.jumpRequested = true;
+        }
+
+        // Debug logging
+        if (this.inputMap[' ']) {
+            console.log('Space pressed - isGrounded:', this.isGrounded, 'inJumpState:', this.inJumpState, 'isCrouching:', this.isCrouching);
+        }
+
+        // The 3-step character controller loop:
+        // 1. Check support (what surface is character on)
+        const down = new Vector3(0, -1, 0);
+        const supportInfo = this.characterController.checkSupport(deltaTime, down);
+
+        // 2. Get desired velocity based on input, state, and support
+        const currentVelocity = this.characterController.getVelocity();
+        const desiredVelocity = this.getDesiredVelocity(deltaTime, supportInfo.supportedState, currentVelocity);
+
+        // 3. Set velocity and integrate
+        this.characterController.setVelocity(desiredVelocity);
+        this.characterController.integrate(deltaTime, supportInfo, this.gravity);
+
+        // Update display mesh position from controller
+        const newPosition = this.characterController.getPosition();
+        this.displayCapsule.position.copyFrom(newPosition);
+        this.rotationNode.position.copyFrom(newPosition);
+
+        // Update camera target
+        this.camera.lockedTarget = this.displayCapsule;
+
         // Prevent falling through world
-        if (this.colliderMesh.position.y < -10) {
-            this.colliderMesh.position = new Vector3(0, 20, 0);
-            body.setLinearVelocity(Vector3.Zero());
+        if (newPosition.y < -10) {
+            this.characterController.setPosition(new Vector3(0, 20, 0));
+            this.characterController.setVelocity(Vector3.Zero());
             this.setState(CharacterState.IDLE);
         }
     }
 
     public getPosition(): Vector3 {
-        return this.colliderMesh.position;
+        return this.characterController.getPosition();
     }
 
     public getMesh() {
-        return this.colliderMesh;
+        return this.displayCapsule;
     }
 
     public getModelMesh() {
