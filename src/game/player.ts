@@ -547,7 +547,12 @@ export class ThirdPersonPlayer {
                             this.updateGroundState();
                         }
                     }, 200);
-                } else if (this.state !== CharacterState.LANDING) {
+                } else if (this.state === CharacterState.LANDING) {
+                    // If we're in LANDING state and grounded, immediately update to ground state
+                    // This fixes the issue when landing on slopes where brief air-time can interrupt
+                    this.updateGroundState();
+                } else {
+                    // Normal grounded state - not in jump and not in landing
                     this.updateGroundState();
                 }
 
@@ -558,12 +563,23 @@ export class ThirdPersonPlayer {
             verticalVelocity += this.gravity.y * deltaTime;
             verticalVelocity = Math.max(verticalVelocity, -30);
 
-            if (this.groundedFrameCount === 0) {
+            // Only play falling animation if we actually jumped (not when walking down slopes)
+            // Also don't trigger falling if we're in LANDING state (just landed and sliding on slope)
+            if (this.groundedFrameCount === 0 && this.inJumpState) {
                 if (verticalVelocity > 0.5) {
                     this.setState(CharacterState.JUMPING);
                 } else if (verticalVelocity < -1.0) {
                     this.setState(CharacterState.FALLING);
                 }
+            }
+
+            // If we're in LANDING state but now in air on a slope, 
+            // transition to ground state on next grounded frame
+            // For now, just keep LANDING state - the timeout will handle it
+            // But if vertical velocity is very negative, force ground state check
+            if (this.state === CharacterState.LANDING && verticalVelocity < -5) {
+                // We're sliding down a steep slope after landing, reset to allow movement
+                this.updateGroundState();
             }
         }
 
