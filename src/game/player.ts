@@ -2,7 +2,7 @@ import { Scene } from '@babylonjs/core/scene';
 import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder';
 import { StandardMaterial } from '@babylonjs/core/Materials/standardMaterial';
 import { Color3 } from '@babylonjs/core/Maths/math.color';
-import { Vector3, Vector2 } from '@babylonjs/core/Maths/math.vector';
+import { Vector3, Vector2, Matrix } from '@babylonjs/core/Maths/math.vector';
 import { Scalar } from '@babylonjs/core/Maths/math.scalar';
 import { ArcRotateCamera } from '@babylonjs/core/Cameras/arcRotateCamera';
 import { ShadowGenerator } from '@babylonjs/core/Lights/Shadows/shadowGenerator';
@@ -13,7 +13,6 @@ import { TransformNode } from '@babylonjs/core/Meshes/transformNode';
 import { PhysicsCharacterController, CharacterSupportedState } from '@babylonjs/core/Physics/v2/characterController';
 import { AdvancedDynamicTexture } from '@babylonjs/gui/2D/advancedDynamicTexture';
 import { Rectangle } from '@babylonjs/gui/2D/controls/rectangle';
-
 
 // Import GLTF loader
 import '@babylonjs/loaders/glTF';
@@ -63,43 +62,23 @@ export class ThirdPersonPlayer {
     private isLocked = false;
     private uiTexture!: AdvancedDynamicTexture;
 
-    // Eye-relative crosshair system
-    private headBone: TransformNode | null = null;
+    // Over-the-shoulder camera settings - using targetScreenOffset
     private crosshairContainer: Rectangle | null = null;
-    private readonly EYE_HEIGHT_OFFSET = 0.08; // Offset from head bone to eye level
 
-    // PUBG-Style Camera Properties
-    private isFreeLooking = false;         // True when holding Left Alt
-    private isAiming = true;               // Default to aiming mode (character faces camera)
-    private freeLookCharacterAngle = 0;    // Snapshot of character rotation when Alt pressed
-    private freeLookCameraAlpha = 0;       // Snapshot of camera alpha when Alt pressed
-    private freeLookCameraBeta = 0;        // Snapshot of camera beta when Alt pressed
-
-    // Camera Offsets - shift character left to clear crosshair (PUBG-style)
-    private readonly SHOULDER_OFFSET = new Vector2(-0.8, -0.2);  // Shift left and slightly up - Reduced from (-2.0, -0.3) to be closer to center
-
-    // Default camera angles
-    private readonly DEFAULT_CAMERA_BETA = 1.3;  // ~75 degrees from vertical, looking slightly down
-
-    // FOV Settings
-    private readonly AIM_FOV = 0.8;        // Zoomed in
-    private readonly NORMAL_FOV = 1.2;     // Standard view
+    // Camera control
+    private isAiming = true;  // Always in aiming mode for PUBG-style
 
     // Jump state tracking
     private jumpRequested = false;
     private inJumpState = false;
-    private groundedFrameCount = 0;  // Counter to stabilize ground detection
-
+    private groundedFrameCount = 0;
 
     // Capsule dimensions
     private capsuleHeight = 1.8;
     private capsuleRadius = 0.3;
 
-    // Model alignment offset - adjusts the model's Y position to align feet with ground
-    // Negative values move the model down (use if character appears to float)
-    // Positive values move the model up (use if feet clip through ground)
-    // private modelGroundOffset = -0.15;  // Compensate for physics gap
-    private modelGroundOffset = -0.15;  // Compensate for physics gap
+    // Model alignment offset
+    private modelGroundOffset = -0.15;
 
     // Bone name mapping: animation library (DEF-*) -> character skeleton
     private static readonly BONE_MAPPING: { [key: string]: string } = {
@@ -184,7 +163,7 @@ export class ThirdPersonPlayer {
         'DEF-thumb.03.R': 'thumb_03_r',
     };
 
-    // Animation name mapping: animation library name -> our key
+    // Animation name mapping
     private static readonly ANIMATION_MAPPING: { [key: string]: string } = {
         'Idle_Loop': 'idle',
         'Walk_Loop': 'walk',
@@ -206,7 +185,7 @@ export class ThirdPersonPlayer {
         this.scene = scene;
         this.camera = camera;
 
-        // Create display capsule (visible mesh that follows the controller)
+        // Create display capsule
         this.displayCapsule = MeshBuilder.CreateCapsule(
             'playerDisplay',
             {
@@ -216,12 +195,12 @@ export class ThirdPersonPlayer {
             },
             scene
         );
-        this.displayCapsule.isVisible = false; // Hide the capsule, we'll show the character model
+        this.displayCapsule.isVisible = false;
 
         // Initial position
         const startPosition = new Vector3(0, 20, 0);
 
-        // Create PhysicsCharacterController with capsule shape
+        // Create PhysicsCharacterController
         this.characterController = new PhysicsCharacterController(
             startPosition,
             {
@@ -231,27 +210,18 @@ export class ThirdPersonPlayer {
             scene
         );
 
-        // Create a rotation node for the character model
-        // This allows us to rotate the character independently of physics
+        // Create rotation node
         this.rotationNode = new TransformNode('rotationNode', scene);
-
-        // Initialize display mesh and rotation node at controller position
         this.displayCapsule.position.copyFrom(startPosition);
         this.rotationNode.position.copyFrom(startPosition);
 
-        // Setup camera to follow display capsule
+        // Setup camera, input, UI
         this.setupCamera();
-
-        // Setup input controls
         this.setupInputControls();
-
-        // Setup UI
         this.setupUI();
-
-        // Setup Pointer Lock
         this.setupPointerLock();
 
-        // Update loop - using onBeforePhysicsObservable for physics-based updates
+        // Update loop
         this.scene.onBeforeRenderObservable.add(() => {
             this.update();
         });
@@ -276,18 +246,9 @@ export class ThirdPersonPlayer {
             if (result.meshes.length > 0) {
                 this.playerMesh = result.meshes[0];
                 this.playerMesh.scaling = new Vector3(1, 1, 1);
-
-                // Parent to rotation node
                 this.playerMesh.parent = this.rotationNode;
-
-                // Position model so feet align with capsule bottom
-                // The capsule center is at the controller position
-                // Capsule bottom is at: position.y - capsuleHeight/2
-                // The model's pivot/origin is typically at the root bone (hip level)
-                // We need to offset by capsuleHeight/2 to bring the model down to capsule bottom
-                // modelGroundOffset further adjusts for physics gap and model-specific alignment
                 this.playerMesh.position = new Vector3(0, -this.capsuleHeight / 2 + this.modelGroundOffset, 0);
-                this.playerMesh.rotation.y = 0; // Face forward
+                this.playerMesh.rotation.y = 0;
 
                 result.meshes.forEach(mesh => {
                     if (mesh) {
@@ -302,16 +263,6 @@ export class ThirdPersonPlayer {
                 if (result.skeletons.length > 0) {
                     this.characterSkeleton = result.skeletons[0];
                     console.log('Character skeleton found:', this.characterSkeleton.name);
-                    console.log('Number of bones:', this.characterSkeleton.bones.length);
-                }
-
-                // Find and store head bone for eye-relative crosshair
-                const headNode = this.playerMesh.getChildTransformNodes(false).find(node => node.name === 'Head');
-                if (headNode) {
-                    this.headBone = headNode;
-                    console.log('Head bone found for eye-relative crosshair');
-                } else {
-                    console.warn('Head bone not found - crosshair will stay centered');
                 }
 
                 console.log('Superhero_Female model loaded successfully');
@@ -340,7 +291,6 @@ export class ThirdPersonPlayer {
                 this.scene
             );
 
-            // Build a map of character's TransformNodes by name
             const characterNodeMap = new Map<string, any>();
 
             if (this.playerMesh) {
@@ -351,9 +301,6 @@ export class ThirdPersonPlayer {
                 characterNodeMap.set(this.playerMesh.name, this.playerMesh);
             }
 
-            console.log('Character has', characterNodeMap.size, 'TransformNodes');
-
-            // Helper function to find matching character node
             const targetConverter = (target: any) => {
                 if (!target || !target.name) return null;
 
@@ -371,26 +318,17 @@ export class ThirdPersonPlayer {
                 return null;
             };
 
-            // Load all animations from the library
             if (result.animationGroups.length > 0) {
-                console.log('Available animations:', result.animationGroups.map(g => g.name));
-
                 result.animationGroups.forEach(animGroup => {
                     const name = animGroup.name;
                     const animKey = ThirdPersonPlayer.ANIMATION_MAPPING[name];
 
-                    // Stop the original animation
                     animGroup.stop();
 
                     if (animKey) {
-                        // Clone the animation group with targetConverter
                         const clonedAnim = animGroup.clone(animKey + '_retargeted', targetConverter);
 
                         if (clonedAnim) {
-                            const originalCount = animGroup.targetedAnimations.length;
-                            const clonedCount = clonedAnim.targetedAnimations.length;
-                            console.log(`✓ ${animKey}: Retargeted ${clonedCount}/${originalCount} animations`);
-
                             this.animations.set(animKey, clonedAnim);
                             clonedAnim.stop();
                         }
@@ -398,13 +336,9 @@ export class ThirdPersonPlayer {
                 });
 
                 console.log('Animation retargeting complete!');
-                console.log('Mapped animations:', Array.from(this.animations.keys()));
-
-                // Start with idle animation
                 this.playAnimation('idle');
             }
 
-            // Hide animation meshes
             result.meshes.forEach(mesh => {
                 mesh.isVisible = false;
                 if (mesh.physicsBody) {
@@ -427,41 +361,39 @@ export class ThirdPersonPlayer {
         }
 
         if (this.currentAnimationName === animationName && this.currentAnimation?.isPlaying) {
-            return; // Already playing this animation
+            return;
         }
 
-        // Stop current animation with blending
         if (this.currentAnimation && this.currentAnimation !== animation) {
             this.currentAnimation.stop();
         }
 
-        // Enable blending for smooth transitions
         animation.enableBlending = true;
         animation.blendingSpeed = blendingSpeed;
-
-        // Play new animation
         animation.start(loop, 1.0, animation.from, animation.to, false);
         this.currentAnimation = animation;
         this.currentAnimationName = animationName;
     }
 
     private setupCamera() {
+        // Third-person camera with over-the-shoulder offset
         this.camera.lockedTarget = this.displayCapsule;
-        this.camera.radius = 5;  // Distance from character
+
+        // Set initial camera position
+        this.camera.alpha = Math.PI; // Behind character
+        this.camera.beta = 1.3;      // Looking slightly down
+        this.camera.radius = 3;      // Closer distance - character behind crosshair
+
+        // Camera limits
         this.camera.lowerRadiusLimit = 3;
         this.camera.upperRadiusLimit = 10;
+        this.camera.lowerBetaLimit = 0.5;
+        this.camera.upperBetaLimit = 1.8;
 
-        // Small offset to position character slightly left of center
-        this.camera.targetScreenOffset = this.SHOULDER_OFFSET.clone();
+        // Over-the-shoulder offset - character appears RIGHT of center, crosshair on left side
+        this.camera.targetScreenOffset = new Vector2(-0.5, -0.1);
 
-        // Set default camera angles
-        this.camera.beta = this.DEFAULT_CAMERA_BETA;  // Looking slightly down at character
-
-        // Limit vertical rotation
-        this.camera.lowerBetaLimit = 0.5;   // Can't look too far up
-        this.camera.upperBetaLimit = 1.8;   // Can't look too far down
-
-        // Sensitivity tuning
+        // Camera sensitivity
         this.camera.angularSensibilityX = 3000;
         this.camera.angularSensibilityY = 3000;
         this.camera.wheelPrecision = 50;
@@ -475,34 +407,14 @@ export class ThirdPersonPlayer {
             switch (kbInfo.type) {
                 case 1: // KEYDOWN
                     this.inputMap[key] = true;
-                    // Free Look activation - freeze movement, store camera position
-                    if (key === 'alt') {
-                        this.isFreeLooking = true;
-                        this.freeLookCharacterAngle = this.rotationNode.rotation.y;
-                        this.freeLookCameraAlpha = this.camera.alpha;
-                        this.freeLookCameraBeta = this.camera.beta;
-                    }
                     break;
                 case 2: // KEYUP
                     this.inputMap[key] = false;
-                    if (key === 'alt') {
-                        this.isFreeLooking = false;
-                        // Reset camera to default position behind the character
-                        // Camera alpha should be opposite of character's facing direction
-                        this.camera.alpha = this.freeLookCharacterAngle + Math.PI;
-                        this.camera.beta = this.DEFAULT_CAMERA_BETA;
-                    }
                     break;
             }
         });
-
-        // Right-click can be used for other actions (weapon aim, etc.)
-        // Aiming mode (character faces camera) is now always on
     }
 
-    /**
-     * Get animation name for current state
-     */
     private getAnimationForState(state: CharacterState): { name: string; loop: boolean } {
         switch (state) {
             case CharacterState.IDLE:
@@ -527,9 +439,6 @@ export class ThirdPersonPlayer {
         }
     }
 
-    /**
-     * Set character state and play corresponding animation
-     */
     private setState(newState: CharacterState): void {
         if (this.state === newState) return;
 
@@ -537,20 +446,12 @@ export class ThirdPersonPlayer {
         this.state = newState;
 
         const animInfo = this.getAnimationForState(newState);
-
-        // Use faster blending for action transitions
         const blendSpeed = (newState === CharacterState.LANDING ||
             newState === CharacterState.JUMP_START) ? 0.2 : 0.1;
 
         this.playAnimation(animInfo.name, animInfo.loop, blendSpeed);
     }
 
-    /**
-     * Calculate desired velocity based on input, state, and support
-     */
-    /**
-     * Smooth rotation helper for PUBG-style character rotation
-     */
     private smoothRotateTo(targetAngle: number) {
         let currentAngle = this.rotationNode.rotation.y;
         while (targetAngle - currentAngle > Math.PI) currentAngle += 2 * Math.PI;
@@ -563,54 +464,12 @@ export class ThirdPersonPlayer {
         supportState: CharacterSupportedState,
         currentVelocity: Vector3
     ): Vector3 {
-        // Free Look (Alt): Freeze movement entirely, only camera rotates
-        // When Alt is released, camera snaps back to behind character
-
-        // If free looking, no horizontal movement at all
-        if (this.isFreeLooking) {
-            // Keep character facing the same direction
-            this.rotationNode.rotation.y = this.freeLookCharacterAngle;
-
-            // Only handle vertical velocity (gravity/jumping)
-            let verticalVelocity = currentVelocity.y;
-
-            if (supportState === CharacterSupportedState.SUPPORTED) {
-                this.groundedFrameCount++;
-            } else {
-                this.groundedFrameCount = 0;
-            }
-
-            const isNowGrounded = supportState === CharacterSupportedState.SUPPORTED ||
-                (this.groundedFrameCount > 0 && !this.inJumpState);
-
-            if (isNowGrounded) {
-                this.isGrounded = true;
-                verticalVelocity = -0.5;
-                if (this.inJumpState) {
-                    this.inJumpState = false;
-                }
-                this.setState(CharacterState.IDLE);
-            } else {
-                this.isGrounded = false;
-                verticalVelocity += this.gravity.y * deltaTime;
-                verticalVelocity = Math.max(verticalVelocity, -30);
-            }
-
-            this.currentSpeed = 0;
-            return new Vector3(0, verticalVelocity, 0);
-        }
-
-        // Normal movement - camera-relative with character facing camera direction
-        // Use camera's actual forward direction for consistent movement regardless of position
+        // Get camera forward direction (projected on XZ plane)
         const cameraForward = this.camera.getDirection(Vector3.Forward());
-
-        // Project camera forward onto XZ plane (ignore vertical component) and normalize
         const forward = new Vector3(cameraForward.x, 0, cameraForward.z).normalize();
-
-        // Calculate right vector (perpendicular to forward on XZ plane)
         const right = new Vector3(forward.z, 0, -forward.x);
 
-        // Calculate movement direction based on input
+        // Calculate movement direction
         let moveDirection = Vector3.Zero();
 
         if (this.inputMap['w'] || this.inputMap['arrowup']) {
@@ -626,28 +485,21 @@ export class ThirdPersonPlayer {
             moveDirection.addInPlace(right);
         }
 
-        // Normalize movement direction
         const isMoving = moveDirection.length() > 0;
         if (isMoving) {
             moveDirection.normalize();
         }
 
-        // Handle Character Rotation based on mode
+        // Character always faces camera direction in aiming mode
         if (this.isAiming) {
-            // Aiming: Character always faces camera direction (enables strafing)
             const cameraForward = this.camera.getDirection(Vector3.Forward());
             const targetAngle = Math.atan2(-cameraForward.x, -cameraForward.z);
             this.smoothRotateTo(targetAngle);
-        } else if (isMoving) {
-            // Normal movement: Character faces movement direction
-            const targetAngle = Math.atan2(moveDirection.x, moveDirection.z);
-            this.smoothRotateTo(targetAngle);
         }
 
-        // Check sprint/crouch input - only allow crouch when grounded
+        // Check sprint/crouch
         const wantsToCrouch = this.inputMap['c'] || this.inputMap['control'] || false;
         this.isCrouching = wantsToCrouch && this.isGrounded;
-        // Allow sprinting in all modes
         this.isSprinting = (this.inputMap['shift'] || false) && !this.isCrouching;
 
         let currentMoveSpeed = this.walkSpeed;
@@ -657,49 +509,39 @@ export class ThirdPersonPlayer {
             currentMoveSpeed = this.sprintSpeed;
         }
 
-        // Calculate horizontal velocity
         const horizontalVelocity = new Vector3(
             moveDirection.x * currentMoveSpeed,
             0,
             moveDirection.z * currentMoveSpeed
         );
 
-        // Store current speed for state machine
         this.currentSpeed = horizontalVelocity.length();
 
-        // Calculate vertical velocity based on support state
+        // Vertical velocity
         let verticalVelocity = currentVelocity.y;
 
-        // Use frame counting to stabilize ground detection
-        // This prevents flickering between grounded/falling states when slightly above ground
         if (supportState === CharacterSupportedState.SUPPORTED) {
             this.groundedFrameCount++;
         } else {
             this.groundedFrameCount = 0;
         }
 
-        // Consider grounded after a few consecutive frames of support
-        // OR if we're not in a jump and have any support
         const isNowGrounded = supportState === CharacterSupportedState.SUPPORTED ||
             (this.groundedFrameCount > 0 && !this.inJumpState);
 
         if (isNowGrounded) {
-            // On ground
             this.isGrounded = true;
 
-            // Handle jump request
             if (this.jumpRequested && !this.isCrouching) {
                 verticalVelocity = this.jumpForce;
                 this.inJumpState = true;
                 this.jumpRequested = false;
-                this.groundedFrameCount = 0;  // Reset ground counter on jump
+                this.groundedFrameCount = 0;
                 this.setState(CharacterState.JUMP_START);
             } else {
-                // Reset jump state when grounded
                 if (this.inJumpState) {
                     this.inJumpState = false;
                     this.setState(CharacterState.LANDING);
-                    // After a short delay, return to normal ground state
                     setTimeout(() => {
                         if (this.isGrounded && this.state === CharacterState.LANDING) {
                             this.updateGroundState();
@@ -709,26 +551,17 @@ export class ThirdPersonPlayer {
                     this.updateGroundState();
                 }
 
-                // Small downward velocity to keep grounded
-                verticalVelocity = -0.5;  // Slightly stronger to maintain ground contact
+                verticalVelocity = -0.5;
             }
         } else {
-            // In the air
             this.isGrounded = false;
-
-            // Apply gravity
             verticalVelocity += this.gravity.y * deltaTime;
-
-            // Cap fall speed
             verticalVelocity = Math.max(verticalVelocity, -30);
 
-            // Only switch to air states if we've been in the air for a bit
-            // This prevents brief state flickers
             if (this.groundedFrameCount === 0) {
                 if (verticalVelocity > 0.5) {
                     this.setState(CharacterState.JUMPING);
                 } else if (verticalVelocity < -1.0) {
-                    // Only show falling animation when actually falling significantly
                     this.setState(CharacterState.FALLING);
                 }
             }
@@ -737,9 +570,6 @@ export class ThirdPersonPlayer {
         return new Vector3(horizontalVelocity.x, verticalVelocity, horizontalVelocity.z);
     }
 
-    /**
-     * Update ground state based on movement
-     */
     private updateGroundState(): void {
         const isMoving = this.currentSpeed > 0.5;
 
@@ -761,14 +591,6 @@ export class ThirdPersonPlayer {
     }
 
     private update() {
-        // Handle Aiming Camera Transition (FOV zoom)
-        if (this.isAiming) {
-            this.camera.fov = Scalar.Lerp(this.camera.fov, this.AIM_FOV, 0.1);
-        } else {
-            this.camera.fov = Scalar.Lerp(this.camera.fov, this.NORMAL_FOV, 0.1);
-        }
-
-        // Get delta time
         const deltaTime = this.scene.getEngine().getDeltaTime() / 1000;
 
         // Handle jump input
@@ -776,29 +598,19 @@ export class ThirdPersonPlayer {
             this.jumpRequested = true;
         }
 
-        // The 3-step character controller loop:
-        // 1. Check support (what surface is character on)
+        // Character controller physics
         const down = new Vector3(0, -1, 0);
         const supportInfo = this.characterController.checkSupport(deltaTime, down);
-
-        // 2. Get desired velocity based on input, state, and support
         const currentVelocity = this.characterController.getVelocity();
         const desiredVelocity = this.getDesiredVelocity(deltaTime, supportInfo.supportedState, currentVelocity);
 
-        // 3. Set velocity and integrate
         this.characterController.setVelocity(desiredVelocity);
         this.characterController.integrate(deltaTime, supportInfo, this.gravity);
 
-        // Update display mesh position from controller
+        // Update display mesh and rotation node
         const newPosition = this.characterController.getPosition();
         this.displayCapsule.position.copyFrom(newPosition);
         this.rotationNode.position.copyFrom(newPosition);
-
-        // Update camera target
-        this.camera.lockedTarget = this.displayCapsule;
-
-        // Update eye-relative crosshair position
-        this.updateCrosshairPosition();
 
         // Prevent falling through world
         if (newPosition.y < -10) {
@@ -806,50 +618,6 @@ export class ThirdPersonPlayer {
             this.characterController.setVelocity(Vector3.Zero());
             this.setState(CharacterState.IDLE);
         }
-    }
-
-    /**
-     * Updates the crosshair position based on the character's eye position
-     * The crosshair is positioned at eye-level, slightly to the right of the character's head
-     */
-    private updateCrosshairPosition(): void {
-        if (!this.crosshairContainer) return;
-
-        const engine = this.scene.getEngine();
-        const screenWidth = engine.getRenderWidth();
-        const screenHeight = engine.getRenderHeight();
-
-        // Calculate eye world position
-        let eyeWorldPosition: Vector3;
-
-        if (this.headBone) {
-            // Get the absolute world position of the head bone
-            eyeWorldPosition = this.headBone.getAbsolutePosition().clone();
-            // Add eye height offset (eyes are slightly above head bone center)
-            eyeWorldPosition.y += this.EYE_HEIGHT_OFFSET;
-        } else {
-            // Fallback: use rotation node position + estimated eye height
-            eyeWorldPosition = this.rotationNode.position.clone();
-            eyeWorldPosition.y += this.capsuleHeight * 0.45; // Approximate eye level
-        }
-
-        // Project eye position to screen space
-        const screenPos = Vector3.Project(
-            eyeWorldPosition,
-            this.scene.getTransformMatrix(),
-            this.camera.getProjectionMatrix(),
-            this.camera.viewport.toGlobal(screenWidth, screenHeight)
-        );
-
-        // Apply screen-space offset to position crosshair close to the head
-        // Position on RIGHT side of character, near neck level (like PUBG style)
-        const horizontalOffset = 350; // Pixels to the right
-        const verticalOffset = 230;   // Pixels down to ear level
-
-        // Position the crosshair container
-        // Adjust for container center (container is 50x50px)
-        this.crosshairContainer.left = `${screenPos.x + horizontalOffset - 25}px`;
-        this.crosshairContainer.top = `${screenPos.y + verticalOffset - 25}px`;
     }
 
     public getPosition(): Vector3 {
@@ -860,34 +628,24 @@ export class ThirdPersonPlayer {
         return this.playerMesh;
     }
 
-    private aimNode!: AbstractMesh;
-
     private setupUI() {
-        // Create fullscreen UI with explicit scene parameter
         this.uiTexture = AdvancedDynamicTexture.CreateFullscreenUI("UI", true, this.scene);
 
-        // Create Aim Target Node (for raycasting, not for crosshair positioning)
-        this.aimNode = MeshBuilder.CreateSphere("aimTarget", { diameter: 0.1 }, this.scene);
-        this.aimNode.parent = this.rotationNode;
-        this.aimNode.position = new Vector3(0, 1.35, 10);
-        this.aimNode.isVisible = false;
-
-        // Create a container for the crosshair - positioned dynamically based on eye position
+        // Fixed crosshair at screen center - PUBG style
         this.crosshairContainer = new Rectangle("crosshairContainer");
         this.crosshairContainer.width = "50px";
         this.crosshairContainer.height = "50px";
         this.crosshairContainer.thickness = 0;
-        this.crosshairContainer.horizontalAlignment = 0; // HORIZONTAL_ALIGNMENT_LEFT (for absolute positioning)
-        this.crosshairContainer.verticalAlignment = 0; // VERTICAL_ALIGNMENT_TOP
+        this.crosshairContainer.horizontalAlignment = Rectangle.HORIZONTAL_ALIGNMENT_CENTER;
+        this.crosshairContainer.verticalAlignment = Rectangle.VERTICAL_ALIGNMENT_CENTER;
         this.uiTexture.addControl(this.crosshairContainer);
 
-        // PUBG-style "+" crosshair with center gap
-        const lineWidth = 2;      // Thickness of lines
-        const lineLength = 10;    // Length of each line segment
-        const gap = 4;            // Gap from center
-        const color = "white";    // PUBG uses white crosshair
+        // PUBG-style "+" crosshair
+        const lineWidth = 2;
+        const lineLength = 10;
+        const gap = 4;
+        const color = "white";
 
-        // Top line
         const topLine = new Rectangle("crosshairTop");
         topLine.width = `${lineWidth}px`;
         topLine.height = `${lineLength}px`;
@@ -896,7 +654,6 @@ export class ThirdPersonPlayer {
         topLine.thickness = 0;
         this.crosshairContainer.addControl(topLine);
 
-        // Bottom line
         const bottomLine = new Rectangle("crosshairBottom");
         bottomLine.width = `${lineWidth}px`;
         bottomLine.height = `${lineLength}px`;
@@ -905,7 +662,6 @@ export class ThirdPersonPlayer {
         bottomLine.thickness = 0;
         this.crosshairContainer.addControl(bottomLine);
 
-        // Left line
         const leftLine = new Rectangle("crosshairLeft");
         leftLine.width = `${lineLength}px`;
         leftLine.height = `${lineWidth}px`;
@@ -914,7 +670,6 @@ export class ThirdPersonPlayer {
         leftLine.thickness = 0;
         this.crosshairContainer.addControl(leftLine);
 
-        // Right line
         const rightLine = new Rectangle("crosshairRight");
         rightLine.width = `${lineLength}px`;
         rightLine.height = `${lineWidth}px`;
@@ -923,14 +678,13 @@ export class ThirdPersonPlayer {
         rightLine.thickness = 0;
         this.crosshairContainer.addControl(rightLine);
 
-        console.log("setupUI: Eye-relative crosshair created.");
+        console.log("setupUI: Over-the-shoulder crosshair created.");
     }
 
     private setupPointerLock() {
         const canvas = this.scene.getEngine().getRenderingCanvas();
         if (!canvas) return;
 
-        // On click, request pointer lock
         canvas.addEventListener("click", () => {
             if (!this.isLocked) {
                 const anyCanvas = canvas as any;
@@ -944,10 +698,8 @@ export class ThirdPersonPlayer {
             }
         });
 
-        // Handle lock state change
         const pointerlockchange = () => {
             const anyDoc = document as any;
-            // Check if our canvas is the one locked
             const control = anyDoc.pointerLockElement ||
                 anyDoc.mozPointerLockElement ||
                 anyDoc.webkitPointerLockElement ||
@@ -961,7 +713,6 @@ export class ThirdPersonPlayer {
             }
         };
 
-        // Attach events
         document.addEventListener("pointerlockchange", pointerlockchange, false);
         document.addEventListener("mspointerlockchange", pointerlockchange, false);
         document.addEventListener("mozpointerlockchange", pointerlockchange, false);
