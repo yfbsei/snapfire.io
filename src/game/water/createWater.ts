@@ -11,11 +11,8 @@ import { MeshBuilder } from '@babylonjs/core/Meshes/meshBuilder';
 import { Mesh } from '@babylonjs/core/Meshes/mesh';
 import { AbstractMesh } from '@babylonjs/core/Meshes/abstractMesh';
 import { Vector3 } from '@babylonjs/core/Maths/math.vector';
-// import { Texture } from '@babylonjs/core/Materials/Textures/texture'; (Removed)
-// import { WaterMaterial } from '@babylonjs/materials/water/waterMaterial';
 import { SceneLoader } from '@babylonjs/core/Loading/sceneLoader';
 import { AnimationGroup } from '@babylonjs/core/Animations/animationGroup';
-// import { AssetContainer } from '@babylonjs/core/assetContainer';
 import { TransformNode } from '@babylonjs/core/Meshes/transformNode';
 import { WaterConfig, defaultWaterConfig } from './WaterConfig';
 import { TerrainInfo } from '../terrain/createTerrain';
@@ -31,8 +28,6 @@ interface PondLocation {
 export interface WaterInfo {
     /** The water meshes (may be multiple from GLTF) */
     meshes: AbstractMesh[];
-    /** The water material for runtime updates (Removed) */
-    // material: WaterMaterial;
     /** Animation groups from GLTF (if using GLTF water) */
     animationGroups: AnimationGroup[];
     /** Add a mesh to the reflection/refraction render list */
@@ -61,7 +56,7 @@ export async function createWater(
         ...config,
     };
 
-    console.log('[Water] Creating water surface at Y =', waterConfig.waterLevel);
+    console.log('[Water] Creating water surface');
     console.log('[Water] Using GLTF water:', waterConfig.useGLTFWater);
 
     let waterMeshes: AbstractMesh[] = [];
@@ -80,27 +75,30 @@ export async function createWater(
             );
 
             // Scan terrain for pond locations
-            // Scan terrain for pond locations
             const pondLocations = scanForPonds(terrainInfo, waterConfig);
             console.log(`[Water] Found ${pondLocations.length} potential pond locations`);
 
             // Instantiate water at each location
             for (const pond of pondLocations) {
-                const entries = container.instantiateModelsToScene((name) => name); // Keep original names (or random sufix)
-                const root = entries.rootNodes[0] as TransformNode; // Assuming first root is the main container
+                const entries = container.instantiateModelsToScene((name) => name);
+                const root = entries.rootNodes[0] as TransformNode;
 
                 if (root) {
-                    // Position
+                    // SIMPLIFIED APPROACH: Place water directly at terrain floor height
+                    // The thick water mesh will naturally fill the depression
                     root.position = pond.position;
+
                     // Scale
                     const scale = pond.scale;
                     root.scaling = new Vector3(scale, scale, scale);
+
                     // Rotation
                     root.rotation = waterConfig.gltfRotation;
 
+                    console.log(`[Water] Placed water at terrain level: ${pond.position.x.toFixed(1)}, ${pond.position.y.toFixed(1)}, ${pond.position.z.toFixed(1)} (scale: ${scale.toFixed(2)})`);
+
                     // Track meshes and animations
-                    waterMeshes.push(...(entries.rootNodes as AbstractMesh[])); // Add roots (may handle children differently, but simplest for now)
-                    // Actually, we should track all meshes for disposal
+                    waterMeshes.push(...(entries.rootNodes as AbstractMesh[]));
                     entries.rootNodes.forEach(n => {
                         const childMeshes = n.getChildMeshes(false);
                         waterMeshes.push(...childMeshes);
@@ -122,10 +120,7 @@ export async function createWater(
         }
     }
 
-    // Fallback if no GLTF or procedural placement found nothing (and we want at least one?)
-    // For now, if procedural found nothing, we get no water. Correct.
-
-    // Create fallback mesh if not using GLTF (Legacy mode)
+    // Fallback if no GLTF or procedural placement found nothing
     if (!waterConfig.useGLTFWater) {
         console.log('[Water] Using legacy water mesh');
         const waterMesh = MeshBuilder.CreateGround(
@@ -141,49 +136,7 @@ export async function createWater(
         waterMeshes = [waterMesh];
     }
 
-    // WaterMaterial logic removed as requested
-    /*
-    // Create water material for reflections and refractions
-    const waterMaterial = new WaterMaterial(
-        'waterMaterial',
-        scene,
-        new Vector2(512, 512) // Render target size for reflections/refractions
-    );
-
-    // Set bump texture for wave surface detail
-    waterMaterial.bumpTexture = new Texture(waterConfig.bumpTexturePath, scene);
-
-    // Configure wave behavior (these affect the visual appearance, not the GLTF geometry)
-    waterMaterial.windForce = waterConfig.windForce;
-    waterMaterial.waveHeight = waterConfig.useGLTFWater ? 0 : waterConfig.waveHeight; // Disable wave height if using GLTF
-    waterMaterial.bumpHeight = waterConfig.bumpHeight;
-    waterMaterial.windDirection = waterConfig.windDirection;
-    waterMaterial.waveLength = waterConfig.waveLength;
-    waterMaterial.waveSpeed = waterConfig.waveSpeed;
-
-    // Configure water appearance
-    waterMaterial.waterColor = waterConfig.waterColor;
-    waterMaterial.colorBlendFactor = waterConfig.colorBlendFactor;
-
-    // Add meshes to reflection/refraction render list
-    for (const mesh of meshesToReflect) {
-        waterMaterial.addToRenderList(mesh);
-    }
-
-    // Apply water material to all water meshes
-    // ONLY if NOT using GLTF water (or if we want to override it, but user requested original look)
-    if (!waterConfig.useGLTFWater) {
-        for (const mesh of waterMeshes) {
-            if (mesh instanceof Mesh && mesh.geometry) {
-                mesh.material = waterMaterial;
-                mesh.isPickable = false;
-            }
-        }
-    }
-    */
-
     // Freeze transforms for performance (but keep animations running)
-    // Only freeze if NOT using GLTF animations
     if (!waterConfig.useGLTFWater) {
         for (const mesh of waterMeshes) {
             if (mesh instanceof Mesh) {
@@ -193,13 +146,11 @@ export async function createWater(
         }
     }
 
-    console.log('[Water] Water surface created with', meshesToReflect.length, 'meshes in render list');
+    console.log('[Water] Water surface created with', waterMeshes.length, 'total meshes');
 
     return {
         meshes: waterMeshes,
-        // material: waterMaterial,
         animationGroups,
-        // addToRenderList: (mesh: Mesh) => {}, // No-op
         addToRenderList: (_mesh: Mesh) => { },
         dispose: () => {
             // Stop animations
@@ -211,77 +162,126 @@ export async function createWater(
             for (const mesh of waterMeshes) {
                 mesh.dispose();
             }
-            // Dispose material
-            // waterMaterial.dispose();
         },
     };
 }
 
 /**
- * Scan terrain for locations that are below the water level
- */
-/**
  * Scan terrain using "Radial Rim Probe" to find valid basins
+ * Returns calculated water level and scael for each pond
  */
 function scanForPonds(terrainInfo: TerrainInfo, config: WaterConfig): PondLocation[] {
     const locations: PondLocation[] = [];
-    const numSamples = 200; // Number of random probes to attempt
-    const bounds = 1000; // Half-width of terrain
-    const halfBounds = bounds / 2;
-    const probeRadius = 150; // Distance to check for rim
+    // We want to scan the entire terrain
+    const bounds = config.width / 2; // Assuming terrain is centered at 0,0
+    const numSamples = 300; // More samples for better coverage
+    const minPondRadius = 10; // Minimum radius to be considered a pond
 
     for (let i = 0; i < numSamples; i++) {
         // Random probe position
-        const x = (Math.random() * bounds) - halfBounds;
-        const z = (Math.random() * bounds) - halfBounds;
+        const x = (Math.random() * config.width) - bounds;
+        const z = (Math.random() * config.depth) - bounds;
 
         const centerHeight = terrainInfo.getHeightAtCoordinates(x, z);
 
-        // Radial Probe: Check 8 points around the circle
+        // Radial Probe: Cast rays outwards to find the "rim" of this potential basin
+        // We move outwards until the height stops increasing (local peak) or we hit a max radius
+        const probeDirections = 8;
+        const maxProbeDist = 200; // Max radius of a lake
+        const stepSize = 10;
+
         let minRimHeight = Number.MAX_VALUE;
-        let isBasin = true;
+        let validRimPoints = 0;
 
-        for (let angle = 0; angle < 360; angle += 45) {
-            const rad = angle * (Math.PI / 180);
-            const px = x + Math.cos(rad) * probeRadius;
-            const pz = z + Math.sin(rad) * probeRadius;
-            const h = terrainInfo.getHeightAtCoordinates(px, pz);
+        for (let j = 0; j < probeDirections; j++) {
+            const angle = (Math.PI * 2 * j) / probeDirections;
+            let currentRimHeight = -Number.MAX_VALUE;
+            let prevHeight = centerHeight;
+            let foundRim = false;
 
-            // Use the LOWEST point on the rim as the spillway
-            if (h < minRimHeight) {
-                minRimHeight = h;
+            for (let d = stepSize; d <= maxProbeDist; d += stepSize) {
+                const px = x + Math.cos(angle) * d;
+                const pz = z + Math.sin(angle) * d;
+                const h = terrainInfo.getHeightAtCoordinates(px, pz);
+
+                if (h < prevHeight) {
+                    // We started going down! This is a local peak/rim.
+                    currentRimHeight = prevHeight;
+                    foundRim = true;
+                    break;
+                }
+                prevHeight = h;
+            }
+
+            // If we didn't find a downward slope, take the height at max distance
+            if (!foundRim) {
+                currentRimHeight = prevHeight;
+            }
+
+            if (currentRimHeight > centerHeight + 2) { // Must be at least 2m basin
+                validRimPoints++;
+                if (currentRimHeight < minRimHeight) {
+                    minRimHeight = currentRimHeight; // The spillway is the lowest point on the rim
+                }
             }
         }
 
-        // Validate: The lowest point on the rim must still be significantly higher than the center
-        // This ensures it's a "bowl" and not a slope/valley that flows out
-        const minDepth = 2.0;
-        if (minRimHeight > centerHeight + minDepth) {
-            // Valid Basin!
+        // Must be surrounded by higher ground
+        if (validRimPoints >= probeDirections && minRimHeight < Number.MAX_VALUE) {
 
             // Calculate Water Level
-            // Bias towards the rim but keep it safe (e.g. 90% up from bottom, or 10% down from rim)
-            // Using WaterFillRatio logic:
-            const basinDepth = minRimHeight - centerHeight;
-            const waterLevel = centerHeight + (basinDepth * config.waterFillRatio);
+            const depressionDepth = minRimHeight - centerHeight;
+            const waterLevel = centerHeight + (depressionDepth * config.waterFillRatio);
 
-            // Random Scale
-            const scale = config.pondMinScale + (Math.random() * (config.pondMaxScale - config.pondMinScale));
+            // Estimate Radius based on where water level hits the terrain
+            // This is a rough approximation for scaling the mesh
+            let estimatedRadius = 0;
+            for (let j = 0; j < probeDirections; j++) {
+                const angle = (Math.PI * 2 * j) / probeDirections;
+                // Binary search-ish to find water edge? Or just linear scan again?
+                // Linear scan implies we know the terrain slope.
+                // Let's just use the depression depth and an assumed slope or just spacing.
+                // Better: Measure distance to where height >= waterLevel
+                for (let d = stepSize; d <= maxProbeDist; d += stepSize) {
+                    const px = x + Math.cos(angle) * d;
+                    const pz = z + Math.sin(angle) * d;
+                    const h = terrainInfo.getHeightAtCoordinates(px, pz);
+                    if (h >= waterLevel) {
+                        estimatedRadius += d;
+                        break;
+                    }
+                }
+            }
+            estimatedRadius /= probeDirections;
 
-            locations.push({
-                position: new Vector3(x, waterLevel, z),
-                scale: scale
-            });
+            if (estimatedRadius >= minPondRadius) {
+                // Check overlap? (Simple distance check against existing)
+                const tooClose = locations.some(l => Vector3.Distance(l.position, new Vector3(x, waterLevel, z)) < (l.scale * 10 + estimatedRadius));
+
+                if (!tooClose) {
+                    // Determine Scale needed. 
+                    // If mesh is 1 unit wide, scale = radius * 2 (roughly)
+                    // Adjusted for visual overlap
+                    const scale = estimatedRadius * 0.5; // Trial and error factor
+
+                    if (scale >= config.pondMinScale && scale <= config.pondMaxScale) {
+                        locations.push({
+                            position: new Vector3(x, waterLevel, z),
+                            scale: scale
+                        });
+                    }
+                }
+            }
         }
     }
 
-    // Fallback if random sampling failed hard
+    // Always ensure at least one big lake if nothing found (or just for safety)
     if (locations.length === 0) {
-        console.warn('[Water] No ponds found via random sampling. Adding fallback.');
+        console.warn('[Water] No natural basins found. creating default lake.');
         const centerHeight = terrainInfo.getHeightAtCoordinates(0, 0);
         locations.push({
-            position: new Vector3(0, centerHeight + 2.0, 0),
-            scale: config.pondMinScale
+            position: new Vector3(0, centerHeight + 2, 0),
+            scale: 2.0
         });
     }
 

@@ -41,13 +41,13 @@ export const defaultWaterConfig: WaterConfig = {
     width: 2000,
     depth: 2000,
     subdivisions: 32,
-    waterLevel: 20, // Lower it slightly from 25
-    pondMinScale: 0.5,
-    pondMaxScale: 3.0,
-    waterFillRatio: 0.85, // Fill 85% of the depression
-    useGLTFWater: true, // Using animated GLTF water model
-    gltfRotation: new Vector3(0, 0, 0), // No rotation (assume model is flat)
-    gltfBaseSize: 0.5, // 0.5x Scale (Direct control)
+    waterLevel: 20,
+    pondMinScale: 0.8, // Slightly larger minimum
+    pondMaxScale: 4.0, // Larger max scale for big lakes
+    waterFillRatio: 0.9, // Fill 90%
+    useGLTFWater: true,
+    gltfRotation: new Vector3(0, 0, 0),
+    gltfBaseSize: 1.0, // Pivot is likely center, assume 1 unit base or adjust dynamically
     gltfPath: '/assets/water/water.glb',
-    animationSpeed: 1.0,
+    animationSpeed: 0.5, // Slower for realism
 };
