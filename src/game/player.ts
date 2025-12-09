@@ -73,6 +73,10 @@ export class ThirdPersonPlayer {
     private inJumpState = false;
     private groundedFrameCount = 0;
 
+    // Idle position locking to prevent slope sliding
+    private idlePosition: Vector3 | null = null;
+    private wasMovingLastFrame = false;
+
     // Capsule dimensions
     private capsuleHeight = 1.8;
     private capsuleRadius = 0.3;
@@ -509,11 +513,18 @@ export class ThirdPersonPlayer {
             currentMoveSpeed = this.sprintSpeed;
         }
 
-        const horizontalVelocity = new Vector3(
-            moveDirection.x * currentMoveSpeed,
-            0,
-            moveDirection.z * currentMoveSpeed
-        );
+        // When grounded and not pressing movement keys, explicitly zero horizontal velocity
+        // This prevents drifting/sliding on slopes due to physics precision issues
+        let horizontalVelocity: Vector3;
+        if (!isMoving && this.isGrounded) {
+            horizontalVelocity = Vector3.Zero();
+        } else {
+            horizontalVelocity = new Vector3(
+                moveDirection.x * currentMoveSpeed,
+                0,
+                moveDirection.z * currentMoveSpeed
+            );
+        }
 
         this.currentSpeed = horizontalVelocity.length();
 
@@ -614,6 +625,12 @@ export class ThirdPersonPlayer {
             this.jumpRequested = true;
         }
 
+        // Check if character is currently moving (any movement key pressed)
+        const isCurrentlyMoving = this.inputMap['w'] || this.inputMap['arrowup'] ||
+            this.inputMap['s'] || this.inputMap['arrowdown'] ||
+            this.inputMap['a'] || this.inputMap['arrowleft'] ||
+            this.inputMap['d'] || this.inputMap['arrowright'];
+
         // Character controller physics
         const down = new Vector3(0, -1, 0);
         const supportInfo = this.characterController.checkSupport(deltaTime, down);
@@ -624,7 +641,26 @@ export class ThirdPersonPlayer {
         this.characterController.integrate(deltaTime, supportInfo, this.gravity);
 
         // Update display mesh and rotation node
-        const newPosition = this.characterController.getPosition();
+        let newPosition = this.characterController.getPosition();
+
+        // Idle position locking to prevent slope sliding
+        if (this.isGrounded && !isCurrentlyMoving && !this.inJumpState) {
+            if (this.wasMovingLastFrame || this.idlePosition === null) {
+                // Just stopped moving - save this position as idle position
+                this.idlePosition = newPosition.clone();
+            } else {
+                // While idle, lock the entire position to prevent sliding and sinking
+                this.characterController.setPosition(this.idlePosition);
+                this.characterController.setVelocity(Vector3.Zero());
+                newPosition = this.idlePosition;
+            }
+        } else {
+            // Moving or in air - clear idle position
+            this.idlePosition = null;
+        }
+
+        this.wasMovingLastFrame = isCurrentlyMoving;
+
         this.displayCapsule.position.copyFrom(newPosition);
         this.rotationNode.position.copyFrom(newPosition);
 
@@ -633,6 +669,7 @@ export class ThirdPersonPlayer {
             this.characterController.setPosition(new Vector3(0, 200, 0));
             this.characterController.setVelocity(Vector3.Zero());
             this.setState(CharacterState.IDLE);
+            this.idlePosition = null;
         }
     }
 

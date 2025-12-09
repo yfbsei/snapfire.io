@@ -9,6 +9,7 @@ import { Color3, Color4 } from '@babylonjs/core/Maths/math.color';
 import HavokPhysics from '@babylonjs/havok';
 import { HavokPlugin } from '@babylonjs/core/Physics/v2/Plugins/havokPlugin';
 import { createTerrain } from './terrain.js';
+import { createWater } from './water/index.js';
 import { ThirdPersonPlayer } from './player.js';
 
 // Import side effects for features we need
@@ -86,13 +87,14 @@ export async function createScene(
     // Create terrain from heatmap - waits for terrain physics to be fully loaded
     const terrainInfo = await createTerrain(scene, shadowGenerator);
 
-    onProgress(80);
+    // Create water with terrain reflections
+    const waterInfo = await createWater(scene, [terrainInfo.ground], terrainInfo);
+    console.log('[Scene] Water created with', waterInfo.meshes.length, 'meshes');
 
-    // Calculate spawn position on terrain
-    const spawnX = 0;
-    const spawnZ = 0;
-    const terrainHeight = terrainInfo.getHeightAtCoordinates(spawnX, spawnZ);
-    const spawnPosition = new Vector3(spawnX, terrainHeight + 2, spawnZ); // +2 for character height buffer
+    onProgress(85);
+
+    // Force spawn position above water for debugging
+    const spawnPosition = new Vector3(0, 20, 0);
 
     // Create third person player at terrain height
     const player = await ThirdPersonPlayer.create(scene, camera, shadowGenerator, spawnPosition);
