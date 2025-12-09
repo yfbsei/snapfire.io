@@ -181,7 +181,7 @@ export class ThirdPersonPlayer {
         'Dance_Loop': 'dance',
     };
 
-    private constructor(scene: Scene, camera: ArcRotateCamera) {
+    private constructor(scene: Scene, camera: ArcRotateCamera, spawnPosition: Vector3) {
         this.scene = scene;
         this.camera = camera;
 
@@ -197,8 +197,8 @@ export class ThirdPersonPlayer {
         );
         this.displayCapsule.isVisible = false;
 
-        // Initial position
-        const startPosition = new Vector3(0, 20, 0);
+        // Use provided spawn position
+        const startPosition = spawnPosition;
 
         // Create PhysicsCharacterController
         this.characterController = new PhysicsCharacterController(
@@ -227,8 +227,8 @@ export class ThirdPersonPlayer {
         });
     }
 
-    public static async create(scene: Scene, camera: ArcRotateCamera, shadowGenerator: ShadowGenerator): Promise<ThirdPersonPlayer> {
-        const player = new ThirdPersonPlayer(scene, camera);
+    public static async create(scene: Scene, camera: ArcRotateCamera, shadowGenerator: ShadowGenerator, spawnPosition: Vector3): Promise<ThirdPersonPlayer> {
+        const player = new ThirdPersonPlayer(scene, camera, spawnPosition);
         await player.loadModel(shadowGenerator);
         await player.loadAnimations();
         return player;
@@ -612,9 +612,9 @@ export class ThirdPersonPlayer {
         this.displayCapsule.position.copyFrom(newPosition);
         this.rotationNode.position.copyFrom(newPosition);
 
-        // Prevent falling through world
+        // Prevent falling through world - respawn if falling too far
         if (newPosition.y < -10) {
-            this.characterController.setPosition(new Vector3(0, 20, 0));
+            this.characterController.setPosition(new Vector3(0, 200, 0));
             this.characterController.setVelocity(Vector3.Zero());
             this.setState(CharacterState.IDLE);
         }

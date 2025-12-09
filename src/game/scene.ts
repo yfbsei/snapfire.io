@@ -83,16 +83,23 @@ export async function createScene(
 
     onProgress(60);
 
-    // Create terrain from heatmap
-    await createTerrain(scene, shadowGenerator);
+    // Create terrain from heatmap - waits for terrain physics to be fully loaded
+    const terrainInfo = await createTerrain(scene, shadowGenerator);
 
     onProgress(80);
 
-    // Create third person player
-    const player = await ThirdPersonPlayer.create(scene, camera, shadowGenerator);
+    // Calculate spawn position on terrain
+    const spawnX = 0;
+    const spawnZ = 0;
+    const terrainHeight = terrainInfo.getHeightAtCoordinates(spawnX, spawnZ);
+    const spawnPosition = new Vector3(spawnX, terrainHeight + 2, spawnZ); // +2 for character height buffer
+
+    // Create third person player at terrain height
+    const player = await ThirdPersonPlayer.create(scene, camera, shadowGenerator, spawnPosition);
     console.log('Player created at position:', player.getPosition());
 
     onProgress(100);
 
     return scene;
 }
+
