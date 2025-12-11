@@ -22,6 +22,10 @@ import { ShadowSystem } from './shadow-system';
 import { AtmosphereSystem } from './atmosphere-system';
 import { RenderingPipeline } from './rendering-pipeline';
 
+// Vegetation System
+import { VegetationSystem } from './vegetation-system';
+import { VEGETATION_CONFIG } from './vegetation-config';
+
 // Inspector import (optional - remove if not needed)
 import '@babylonjs/inspector';
 
@@ -40,6 +44,9 @@ export class App {
 
     // Character controller
     private characterController!: CharacterController;
+
+    // Vegetation system
+    private vegetationSystem!: VegetationSystem;
 
     constructor(canvas: HTMLCanvasElement) {
         this.canvas = canvas;
@@ -66,10 +73,11 @@ export class App {
             adaptToDeviceRatio: true,
             antialias: true,
             stencil: true,
-            // Request higher limits for advanced rendering features
+            // Request higher limits for advanced rendering features and large assets
             deviceDescriptor: {
                 requiredLimits: {
                     maxColorAttachmentBytesPerSample: 128, // Support SSAO, SSR, and other MRT effects
+                    maxBufferSize: 2147483648,            // 2GB buffer size for large vegetation models
                 },
             },
         });
@@ -200,6 +208,14 @@ export class App {
         console.log('✅ Terrain loaded from 4k heightmap');
         console.log('📐 Terrain size: 2km x 2km');
 
+        // ===== VEGETATION SYSTEM =====
+        console.log('');
+        console.log('🌲 Setting up vegetation system...');
+
+        this.vegetationSystem = new VegetationSystem(this.scene, VEGETATION_CONFIG);
+        await this.vegetationSystem.loadAssets();
+        this.vegetationSystem.distributeVegetation(terrain);
+
         // ===== CHARACTER CONTROLLER =====
         console.log('🧍 Setting up character controller...');
 
@@ -270,6 +286,9 @@ export class App {
 
         // Dispose character controller
         this.characterController?.dispose();
+
+        // Dispose vegetation system
+        this.vegetationSystem?.dispose();
 
         // Dispose scene systems
         this.terrainSystem?.dispose();

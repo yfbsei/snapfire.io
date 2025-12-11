@@ -39,3 +39,5 @@ assets/
 project.bjseditor
 
 package-lock.json
+
+src/asset/
