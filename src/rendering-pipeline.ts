@@ -32,23 +32,11 @@ export class RenderingPipeline {
         // ===== TONE MAPPING & EXPOSURE =====
         this.setupToneMapping();
 
-        // ===== BLOOM =====
-        this.setupBloom();
-
-        // ===== DEPTH OF FIELD =====
-        this.setupDepthOfField();
-
-        // ===== CHROMATIC ABERRATION =====
-        this.setupChromaticAberration();
-
         // ===== VIGNETTE =====
         this.setupVignette();
 
         // ===== IMAGE PROCESSING =====
         this.setupImageProcessing();
-
-        // ===== GRAIN =====
-        this.setupGrain();
 
         // ===== ANTI-ALIASING =====
         this.setupAntiAliasing();
@@ -96,58 +84,6 @@ export class RenderingPipeline {
         }
     }
 
-    private setupBloom(): void {
-        if (!this.pipeline) return;
-
-        console.log('  ✨ Configuring bloom...');
-
-        this.pipeline.bloomEnabled = this.config.bloomEnabled;
-
-        if (this.config.bloomEnabled) {
-            this.pipeline.bloomThreshold = this.config.bloomThreshold;
-            this.pipeline.bloomWeight = this.config.bloomWeight;
-            this.pipeline.bloomKernel = this.config.bloomKernel;
-            this.pipeline.bloomScale = this.config.bloomScale;
-
-            console.log(`    - Threshold: ${this.config.bloomThreshold}`);
-            console.log(`    - Weight: ${this.config.bloomWeight}`);
-        }
-    }
-
-    private setupDepthOfField(): void {
-        if (!this.pipeline) return;
-
-        console.log('  🎯 Configuring depth of field...');
-
-        this.pipeline.depthOfFieldEnabled = this.config.dofEnabled;
-
-        if (this.config.dofEnabled && this.pipeline.depthOfField) {
-            this.pipeline.depthOfField.focalLength = this.config.dofFocalLength;
-            this.pipeline.depthOfField.fStop = this.config.dofFStop;
-            this.pipeline.depthOfField.focusDistance = this.config.dofFocusDistance;
-
-            console.log(`    - Focal Length: ${this.config.dofFocalLength}`);
-            console.log(`    - F-Stop: ${this.config.dofFStop}`);
-        }
-    }
-
-    private setupChromaticAberration(): void {
-        if (!this.pipeline) return;
-
-        console.log('  🌈 Configuring chromatic aberration...');
-
-        this.pipeline.chromaticAberrationEnabled = this.config.chromaticAberrationEnabled;
-
-        if (this.config.chromaticAberrationEnabled && this.pipeline.chromaticAberration) {
-            this.pipeline.chromaticAberration.aberrationAmount = this.config.chromaticAberrationAmount;
-            this.pipeline.chromaticAberration.radialIntensity = 1.0;
-            this.pipeline.chromaticAberration.direction.x = 0.707;
-            this.pipeline.chromaticAberration.direction.y = 0.707;
-
-            console.log(`    - Amount: ${this.config.chromaticAberrationAmount}`);
-        }
-    }
-
     private setupVignette(): void {
         if (!this.pipeline) return;
 
@@ -173,28 +109,10 @@ export class RenderingPipeline {
 
         console.log('  🖼️ Configuring image processing...');
 
-        // Apply contrast and saturation (already set in tone mapping, but ensure they're applied)
+        // Apply contrast
         this.pipeline.imageProcessing.contrast = this.config.contrast;
 
-        // Note: BabylonJS doesn't have a direct saturation property in ImageProcessingConfiguration
-        // We can use color curves for more advanced color grading if needed
-
         console.log(`    - Contrast: ${this.config.contrast}`);
-    }
-
-    private setupGrain(): void {
-        if (!this.pipeline) return;
-
-        console.log('  🎞️ Configuring grain...');
-
-        this.pipeline.grainEnabled = this.config.grainEnabled;
-
-        if (this.config.grainEnabled && this.pipeline.grain) {
-            this.pipeline.grain.intensity = this.config.grainIntensity;
-            this.pipeline.grain.animated = true;
-
-            console.log(`    - Intensity: ${this.config.grainIntensity}`);
-        }
     }
 
     private setupAntiAliasing(): void {
@@ -217,42 +135,6 @@ export class RenderingPipeline {
      */
     getPipeline(): DefaultRenderingPipeline | null {
         return this.pipeline;
-    }
-
-    /**
-     * Toggle bloom at runtime
-     */
-    setBloomEnabled(enabled: boolean): void {
-        if (this.pipeline) {
-            this.pipeline.bloomEnabled = enabled;
-        }
-    }
-
-    /**
-     * Update bloom threshold at runtime
-     */
-    setBloomThreshold(threshold: number): void {
-        if (this.pipeline) {
-            this.pipeline.bloomThreshold = threshold;
-        }
-    }
-
-    /**
-     * Update bloom weight at runtime
-     */
-    setBloomWeight(weight: number): void {
-        if (this.pipeline) {
-            this.pipeline.bloomWeight = weight;
-        }
-    }
-
-    /**
-     * Toggle depth of field at runtime
-     */
-    setDepthOfFieldEnabled(enabled: boolean): void {
-        if (this.pipeline) {
-            this.pipeline.depthOfFieldEnabled = enabled;
-        }
     }
 
     /**

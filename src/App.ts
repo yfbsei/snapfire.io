@@ -9,6 +9,9 @@ import { HDRCubeTexture } from '@babylonjs/core/Materials/Textures/hdrCubeTextur
 // Terrain system
 import { TerrainSystem, TerrainConfig } from './terrain';
 
+// Character controller
+import { CharacterController } from './character-controller';
+
 // HDRI Configuration
 import { CURRENT_HDRI, AVAILABLE_HDRIS } from './hdri-config';
 
@@ -16,9 +19,6 @@ import { CURRENT_HDRI, AVAILABLE_HDRIS } from './hdri-config';
 import { CURRENT_PRESET } from './rendering-config';
 import { LightSystem, DEFAULT_LIGHT_CONFIG } from './light-system';
 import { ShadowSystem } from './shadow-system';
-import { SSAOSystem } from './ssao-system';
-import { SSRSystem } from './ssr-system';
-import { VolumetricLightSystem } from './volumetric-light-system';
 import { AtmosphereSystem } from './atmosphere-system';
 import { RenderingPipeline } from './rendering-pipeline';
 
@@ -35,11 +35,11 @@ export class App {
     // Photorealistic rendering systems
     private lightSystem!: LightSystem;
     private shadowSystem!: ShadowSystem;
-    private ssaoSystem!: SSAOSystem;
-    private ssrSystem!: SSRSystem;
-    private volumetricLightSystem!: VolumetricLightSystem;
     private atmosphereSystem!: AtmosphereSystem;
     private renderingPipeline!: RenderingPipeline;
+
+    // Character controller
+    private characterController!: CharacterController;
 
     constructor(canvas: HTMLCanvasElement) {
         this.canvas = canvas;
@@ -113,6 +113,10 @@ export class App {
         this.camera.angularSensibilityX = 500;  // Rotation sensitivity
         this.camera.angularSensibilityY = 500;
 
+        // CRITICAL: Set minZ for large terrain to prevent Z-fighting/vibration
+        // Default minZ (0.1) causes depth buffer precision issues on large terrains
+        this.camera.minZ = 1;  // 1 meter near clip prevents jitter
+
         // Setup WASD keyboard controls for camera movement
         this.setupKeyboardControls();
 
@@ -160,21 +164,7 @@ export class App {
         this.shadowSystem = new ShadowSystem(this.scene, CURRENT_PRESET.shadows);
         const shadowGenerator = this.shadowSystem.setupShadows(sunLight, []);
 
-        // ===== GLOBAL ILLUMINATION =====
-
-        // Setup SSAO (Screen Space Ambient Occlusion)
-        this.ssaoSystem = new SSAOSystem(this.scene, CURRENT_PRESET.ssao);
-        this.ssaoSystem.setup(this.camera);
-
-        // Setup SSR (Screen Space Reflections)
-        this.ssrSystem = new SSRSystem(this.scene, CURRENT_PRESET.ssr);
-        this.ssrSystem.setup(this.camera);
-
-        // ===== VOLUMETRIC & ATMOSPHERIC EFFECTS =====
-
-        // Volumetric light disabled (no sun light in night-time mode)
-        // this.volumetricLightSystem = new VolumetricLightSystem(this.scene, CURRENT_PRESET.volumetricLight);
-        // this.volumetricLightSystem.setup(this.camera, sunLight);
+        // ===== ATMOSPHERIC EFFECTS =====
 
         // Setup atmospheric fog
         this.atmosphereSystem = new AtmosphereSystem(this.scene, CURRENT_PRESET.atmosphere);
@@ -199,14 +189,36 @@ export class App {
         this.terrainSystem = new TerrainSystem(this.scene, terrainConfig);
         const terrain = await this.terrainSystem.createTerrain();
 
-        // Enable shadows on terrain for depth
+        // Enable shadows on terrain
         if (terrain) {
-            // Terrain receives shadows but doesn't cast (optimization)
+            // Terrain both receives and casts shadows for full shadow system
             terrain.receiveShadows = true;
+            this.shadowSystem.addShadowCaster(terrain);
+            console.log('🌓 Terrain added as shadow caster');
         }
 
         console.log('✅ Terrain loaded from 4k heightmap');
         console.log('📐 Terrain size: 2km x 2km');
+
+        // ===== CHARACTER CONTROLLER =====
+        console.log('🧍 Setting up character controller...');
+
+        // Create character controller on the terrain
+        this.characterController = new CharacterController(this.scene, terrain, {
+            spawnPosition: new Vector3(0, 150, 0),  // Start above terrain center
+        });
+        await this.characterController.init();
+
+        // Lock camera to follow the character
+        this.camera.lockedTarget = this.characterController.getMesh();
+
+        // Adjust camera settings for third-person view
+        this.camera.radius = 15;  // Distance from character
+        this.camera.lowerRadiusLimit = 3;  // Min zoom (close to character)
+        this.camera.upperRadiusLimit = 50;  // Max zoom (can see surroundings)
+        this.camera.beta = Math.PI / 3;  // Default viewing angle
+
+        console.log('✅ Third-person character controller ready');
         console.log('🌲 Ready for forest procedural generation');
 
         // Show inspector AND scene explorer automatically on startup
@@ -216,7 +228,7 @@ export class App {
         });
 
         console.log('🔍 Inspector + Scene Explorer enabled (press Shift+Ctrl+Alt+I to toggle)');
-        console.log('⌨️  WASD keys to move camera | Mouse to rotate | Scroll to zoom');
+        console.log('⌨️  WASD to move character | Mouse to rotate camera | Scroll to zoom');
 
         // Enable inspector toggle with Shift+Ctrl+Alt+I
         window.addEventListener('keydown', (event) => {
@@ -231,62 +243,9 @@ export class App {
     }
 
     private setupKeyboardControls(): void {
-        const moveSpeed = 10;  // Units per frame
-
-        // Track which keys are pressed
-        const keys: { [key: string]: boolean } = {};
-
-        // Key down event
-        window.addEventListener('keydown', (event) => {
-            keys[event.key.toLowerCase()] = true;
-        });
-
-        // Key up event
-        window.addEventListener('keyup', (event) => {
-            keys[event.key.toLowerCase()] = false;
-        });
-
-        // Update camera position each frame based on pressed keys
-        this.scene.onBeforeRenderObservable.add(() => {
-            const target = this.camera.target.clone();
-
-            // Calculate camera's forward and right vectors
-            const forward = this.camera.getDirection(Vector3.Forward());
-            const right = this.camera.getDirection(Vector3.Right());
-
-            // Project to horizontal plane (ignore Y component for ground movement)
-            forward.y = 0;
-            forward.normalize();
-            right.y = 0;
-            right.normalize();
-
-            // W - Move forward
-            if (keys['w']) {
-                target.addInPlace(forward.scale(moveSpeed));
-            }
-
-            // S - Move backward
-            if (keys['s']) {
-                target.addInPlace(forward.scale(-moveSpeed));
-            }
-
-            // A - Move left
-            if (keys['a']) {
-                target.addInPlace(right.scale(-moveSpeed));
-            }
-
-            // D - Move right
-            if (keys['d']) {
-                target.addInPlace(right.scale(moveSpeed));
-            }
-
-            // Update camera target if any movement key was pressed
-            if (keys['w'] || keys['s'] || keys['a'] || keys['d']) {
-                this.camera.target = target;
-            }
-        });
-
-        console.log('⌨️  WASD controls enabled');
+        // Keyboard controls are now handled by the CharacterController
+        // This method is kept for any future camera-specific controls
+        console.log('⌨️  Keyboard controls delegated to character controller');
     }
 
     private startRenderLoop(): void {
@@ -306,11 +265,11 @@ export class App {
         // Dispose rendering systems
         this.renderingPipeline?.dispose();
         this.atmosphereSystem?.dispose();
-        this.volumetricLightSystem?.dispose();
-        this.ssrSystem?.dispose();
-        this.ssaoSystem?.dispose();
         this.shadowSystem?.dispose();
         this.lightSystem?.dispose();
+
+        // Dispose character controller
+        this.characterController?.dispose();
 
         // Dispose scene systems
         this.terrainSystem?.dispose();

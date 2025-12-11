@@ -13,34 +13,6 @@ export interface ShadowConfig {
     normalBias: number;              // Normal-based bias
 }
 
-export interface SSAOConfig {
-    enabled: boolean;
-    samples: number;                 // Number of samples (higher = better quality)
-    radius: number;                  // Effect radius
-    base: number;                    // Base intensity
-    ssaoRatio: number;               // Resolution ratio (0.5 = half res for performance)
-    bilateralBlur: boolean;          // Clean up noise
-}
-
-export interface SSRConfig {
-    enabled: boolean;
-    samples: number;                 // Ray marching samples
-    step: number;                    // Ray marching step size
-    strength: number;                // Reflection intensity
-    reflectionSpecularFalloffExponent: number;
-    threshold: number;               // Edge detection threshold
-    roughnessFactor: number;         // Roughness multiplier
-}
-
-export interface VolumetricLightConfig {
-    enabled: boolean;
-    samples: number;                 // Number of samples along ray
-    density: number;                 // Light density
-    decay: number;                   // Light decay along ray
-    weight: number;                  // Light weight/intensity
-    exposure: number;                // Overall exposure
-}
-
 export interface AtmosphereConfig {
     enabled: boolean;
     fogMode: 'exp' | 'exp2' | 'linear';
@@ -56,28 +28,6 @@ export interface PostProcessConfig {
     toneMappingType: 'ACES' | 'Reinhard' | 'Photographic' | 'None';
     exposure: number;                // Camera exposure
 
-    // Auto Exposure
-    autoExposure: boolean;
-    minLuminance: number;
-    maxLuminance: number;
-
-    // Bloom
-    bloomEnabled: boolean;
-    bloomThreshold: number;          // Brightness threshold
-    bloomWeight: number;             // Bloom intensity
-    bloomKernel: number;             // Blur kernel size
-    bloomScale: number;              // Bloom scale
-
-    // Depth of Field
-    dofEnabled: boolean;
-    dofFocalLength: number;          // Focus distance
-    dofFStop: number;                // Aperture f-stop
-    dofFocusDistance: number;
-
-    // Chromatic Aberration
-    chromaticAberrationEnabled: boolean;
-    chromaticAberrationAmount: number;
-
     // Vignette
     vignetteEnabled: boolean;
     vignetteWeight: number;
@@ -86,10 +36,6 @@ export interface PostProcessConfig {
     // Image Processing
     contrast: number;                // 1.0 = default
     saturation: number;              // 1.0 = default
-
-    // Grain
-    grainEnabled: boolean;
-    grainIntensity: number;
 }
 
 export interface AntiAliasingConfig {
@@ -100,9 +46,6 @@ export interface AntiAliasingConfig {
 
 export interface RenderingConfig {
     shadows: ShadowConfig;
-    ssao: SSAOConfig;
-    ssr: SSRConfig;
-    volumetricLight: VolumetricLightConfig;
     atmosphere: AtmosphereConfig;
     postProcess: PostProcessConfig;
     antiAliasing: AntiAliasingConfig;
@@ -125,35 +68,10 @@ export const ULTRA_QUALITY_PRESET: RenderingConfig = {
         bias: 0.00005,               // Reduced bias for sharper shadow edges
         normalBias: 0.0005,          // Reduced for better shadow contact
     },
-    ssao: {
-        enabled: true,
-        samples: 64,                 // High sample count
-        radius: 2.0,                 // Increased for terrain-scale features
-        base: 0.08,                  // Increased for more visible depth cues
-        ssaoRatio: 1.0,              // Full resolution
-        bilateralBlur: true,
-    },
-    ssr: {
-        enabled: false,              // Disabled due to WebGPU shader validation issues
-        samples: 128,                // High quality reflections
-        step: 0.04,
-        strength: 1.0,
-        reflectionSpecularFalloffExponent: 3,
-        threshold: 0.4,
-        roughnessFactor: 0.2,
-    },
-    volumetricLight: {
-        enabled: false,              // Disabled - may cause terrain artifacts
-        samples: 100,                // High quality god rays
-        density: 0.96,
-        decay: 0.98,
-        weight: 0.4,
-        exposure: 0.3,
-    },
     atmosphere: {
         enabled: true,
         fogMode: 'exp2',             // Exponential squared for realistic falloff
-        fogDensity: 0.00008,         // Reduced for clearer night skies
+        fogDensity: 0.00008,         // Subtle atmospheric depth
         fogStart: 100,
         fogEnd: 5000,
         fogColor: { r: 0.05, g: 0.06, b: 0.1 },  // Dark night-time color
@@ -163,33 +81,12 @@ export const ULTRA_QUALITY_PRESET: RenderingConfig = {
         toneMappingType: 'ACES',     // Cinematic ACES tone mapping
         exposure: 1.3,               // Increased for overcast day visibility
 
-        autoExposure: true,
-        minLuminance: 0.25,
-        maxLuminance: 4.0,
-
-        bloomEnabled: true,
-        bloomThreshold: 0.8,
-        bloomWeight: 0.15,           // Reduced for subtler highlights
-        bloomKernel: 64,
-        bloomScale: 0.5,
-
-        dofEnabled: false,           // Optional - can enable for specific shots
-        dofFocalLength: 150,
-        dofFStop: 1.4,
-        dofFocusDistance: 2000,
-
-        chromaticAberrationEnabled: true,
-        chromaticAberrationAmount: 1.5,
-
         vignetteEnabled: true,
         vignetteWeight: 0.5,
         vignetteColor: { r: 0, g: 0, b: 0 },
 
         contrast: 1.15,              // Slightly reduced for softer overcast look
         saturation: 1.1,
-
-        grainEnabled: true,
-        grainIntensity: 5.0,
     },
     antiAliasing: {
         enabled: true,
@@ -207,19 +104,6 @@ export const HIGH_QUALITY_PRESET: RenderingConfig = {
         ...ULTRA_QUALITY_PRESET.shadows,
         resolution: 4096,
         pcfSamples: 32,
-    },
-    ssao: {
-        ...ULTRA_QUALITY_PRESET.ssao,
-        samples: 32,
-        ssaoRatio: 0.75,
-    },
-    ssr: {
-        ...ULTRA_QUALITY_PRESET.ssr,
-        samples: 64,
-    },
-    volumetricLight: {
-        ...ULTRA_QUALITY_PRESET.volumetricLight,
-        samples: 50,
     },
 };
 
