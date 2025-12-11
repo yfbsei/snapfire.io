@@ -1,0 +1,282 @@
+// Main Rendering Pipeline - Orchestrates all post-processing effects
+import { Scene } from '@babylonjs/core/scene';
+import { Camera } from '@babylonjs/core/Cameras/camera';
+import { DefaultRenderingPipeline } from '@babylonjs/core/PostProcesses/RenderPipeline/Pipelines/defaultRenderingPipeline';
+import { ImageProcessingConfiguration } from '@babylonjs/core/Materials/imageProcessingConfiguration';
+import { PostProcessConfig } from './rendering-config';
+
+export class RenderingPipeline {
+    private scene: Scene;
+    private config: PostProcessConfig;
+    private pipeline: DefaultRenderingPipeline | null = null;
+
+    constructor(scene: Scene, config: PostProcessConfig) {
+        this.scene = scene;
+        this.config = config;
+    }
+
+    /**
+     * Setup the main rendering pipeline with all post-processing effects
+     */
+    setup(camera: Camera): DefaultRenderingPipeline {
+        console.log('🎨 Setting up Default Rendering Pipeline...');
+
+        // Create default rendering pipeline (includes many built-in effects)
+        this.pipeline = new DefaultRenderingPipeline(
+            'defaultPipeline',
+            this.config.toneMappingEnabled, // HDR
+            this.scene,
+            [camera]
+        );
+
+        // ===== TONE MAPPING & EXPOSURE =====
+        this.setupToneMapping();
+
+        // ===== BLOOM =====
+        this.setupBloom();
+
+        // ===== DEPTH OF FIELD =====
+        this.setupDepthOfField();
+
+        // ===== CHROMATIC ABERRATION =====
+        this.setupChromaticAberration();
+
+        // ===== VIGNETTE =====
+        this.setupVignette();
+
+        // ===== IMAGE PROCESSING =====
+        this.setupImageProcessing();
+
+        // ===== GRAIN =====
+        this.setupGrain();
+
+        // ===== ANTI-ALIASING =====
+        this.setupAntiAliasing();
+
+        console.log('✅ Rendering pipeline configured with all effects');
+
+        return this.pipeline;
+    }
+
+    private setupToneMapping(): void {
+        if (!this.pipeline) return;
+
+        console.log('  📷 Configuring tone mapping...');
+
+        // Enable image processing
+        this.pipeline.imageProcessingEnabled = true;
+
+        if (this.pipeline.imageProcessing) {
+            // Tone mapping type
+            switch (this.config.toneMappingType) {
+                case 'ACES':
+                    this.pipeline.imageProcessing.toneMappingType = ImageProcessingConfiguration.TONEMAPPING_ACES;
+                    break;
+                case 'Reinhard':
+                    this.pipeline.imageProcessing.toneMappingType = ImageProcessingConfiguration.TONEMAPPING_KHR_PBR_NEUTRAL;
+                    break;
+                case 'Photographic':
+                    // Use standard tone mapping as Photographic isn't available
+                    this.pipeline.imageProcessing.toneMappingType = ImageProcessingConfiguration.TONEMAPPING_STANDARD;
+                    break;
+                case 'None':
+                default:
+                    this.pipeline.imageProcessing.toneMappingEnabled = false;
+                    break;
+            }
+
+            // Exposure
+            this.pipeline.imageProcessing.exposure = this.config.exposure;
+
+            // Contrast
+            this.pipeline.imageProcessing.contrast = this.config.contrast;
+
+            console.log(`    - Tone Mapping: ${this.config.toneMappingType}`);
+            console.log(`    - Exposure: ${this.config.exposure}`);
+        }
+    }
+
+    private setupBloom(): void {
+        if (!this.pipeline) return;
+
+        console.log('  ✨ Configuring bloom...');
+
+        this.pipeline.bloomEnabled = this.config.bloomEnabled;
+
+        if (this.config.bloomEnabled) {
+            this.pipeline.bloomThreshold = this.config.bloomThreshold;
+            this.pipeline.bloomWeight = this.config.bloomWeight;
+            this.pipeline.bloomKernel = this.config.bloomKernel;
+            this.pipeline.bloomScale = this.config.bloomScale;
+
+            console.log(`    - Threshold: ${this.config.bloomThreshold}`);
+            console.log(`    - Weight: ${this.config.bloomWeight}`);
+        }
+    }
+
+    private setupDepthOfField(): void {
+        if (!this.pipeline) return;
+
+        console.log('  🎯 Configuring depth of field...');
+
+        this.pipeline.depthOfFieldEnabled = this.config.dofEnabled;
+
+        if (this.config.dofEnabled && this.pipeline.depthOfField) {
+            this.pipeline.depthOfField.focalLength = this.config.dofFocalLength;
+            this.pipeline.depthOfField.fStop = this.config.dofFStop;
+            this.pipeline.depthOfField.focusDistance = this.config.dofFocusDistance;
+
+            console.log(`    - Focal Length: ${this.config.dofFocalLength}`);
+            console.log(`    - F-Stop: ${this.config.dofFStop}`);
+        }
+    }
+
+    private setupChromaticAberration(): void {
+        if (!this.pipeline) return;
+
+        console.log('  🌈 Configuring chromatic aberration...');
+
+        this.pipeline.chromaticAberrationEnabled = this.config.chromaticAberrationEnabled;
+
+        if (this.config.chromaticAberrationEnabled && this.pipeline.chromaticAberration) {
+            this.pipeline.chromaticAberration.aberrationAmount = this.config.chromaticAberrationAmount;
+            this.pipeline.chromaticAberration.radialIntensity = 1.0;
+            this.pipeline.chromaticAberration.direction.x = 0.707;
+            this.pipeline.chromaticAberration.direction.y = 0.707;
+
+            console.log(`    - Amount: ${this.config.chromaticAberrationAmount}`);
+        }
+    }
+
+    private setupVignette(): void {
+        if (!this.pipeline) return;
+
+        console.log('  🎭 Configuring vignette...');
+
+        if (this.pipeline.imageProcessing) {
+            this.pipeline.imageProcessing.vignetteEnabled = this.config.vignetteEnabled;
+
+            if (this.config.vignetteEnabled) {
+                this.pipeline.imageProcessing.vignetteWeight = this.config.vignetteWeight;
+                this.pipeline.imageProcessing.vignetteColor.r = this.config.vignetteColor.r;
+                this.pipeline.imageProcessing.vignetteColor.g = this.config.vignetteColor.g;
+                this.pipeline.imageProcessing.vignetteColor.b = this.config.vignetteColor.b;
+                this.pipeline.imageProcessing.vignetteCameraFov = 0.5;
+
+                console.log(`    - Weight: ${this.config.vignetteWeight}`);
+            }
+        }
+    }
+
+    private setupImageProcessing(): void {
+        if (!this.pipeline || !this.pipeline.imageProcessing) return;
+
+        console.log('  🖼️ Configuring image processing...');
+
+        // Apply contrast and saturation (already set in tone mapping, but ensure they're applied)
+        this.pipeline.imageProcessing.contrast = this.config.contrast;
+
+        // Note: BabylonJS doesn't have a direct saturation property in ImageProcessingConfiguration
+        // We can use color curves for more advanced color grading if needed
+
+        console.log(`    - Contrast: ${this.config.contrast}`);
+    }
+
+    private setupGrain(): void {
+        if (!this.pipeline) return;
+
+        console.log('  🎞️ Configuring grain...');
+
+        this.pipeline.grainEnabled = this.config.grainEnabled;
+
+        if (this.config.grainEnabled && this.pipeline.grain) {
+            this.pipeline.grain.intensity = this.config.grainIntensity;
+            this.pipeline.grain.animated = true;
+
+            console.log(`    - Intensity: ${this.config.grainIntensity}`);
+        }
+    }
+
+    private setupAntiAliasing(): void {
+        if (!this.pipeline) return;
+
+        console.log('  🔲 Configuring anti-aliasing...');
+
+        // FXAA is fast and works well
+        this.pipeline.fxaaEnabled = true;
+
+        // Can also enable MSAA if supported (WebGPU supports it well)
+        this.pipeline.samples = 4; // 4x MSAA
+
+        console.log(`    - FXAA: Enabled`);
+        console.log(`    - MSAA: 4x`);
+    }
+
+    /**
+     * Get the pipeline instance
+     */
+    getPipeline(): DefaultRenderingPipeline | null {
+        return this.pipeline;
+    }
+
+    /**
+     * Toggle bloom at runtime
+     */
+    setBloomEnabled(enabled: boolean): void {
+        if (this.pipeline) {
+            this.pipeline.bloomEnabled = enabled;
+        }
+    }
+
+    /**
+     * Update bloom threshold at runtime
+     */
+    setBloomThreshold(threshold: number): void {
+        if (this.pipeline) {
+            this.pipeline.bloomThreshold = threshold;
+        }
+    }
+
+    /**
+     * Update bloom weight at runtime
+     */
+    setBloomWeight(weight: number): void {
+        if (this.pipeline) {
+            this.pipeline.bloomWeight = weight;
+        }
+    }
+
+    /**
+     * Toggle depth of field at runtime
+     */
+    setDepthOfFieldEnabled(enabled: boolean): void {
+        if (this.pipeline) {
+            this.pipeline.depthOfFieldEnabled = enabled;
+        }
+    }
+
+    /**
+     * Update exposure at runtime
+     */
+    setExposure(exposure: number): void {
+        if (this.pipeline && this.pipeline.imageProcessing) {
+            this.pipeline.imageProcessing.exposure = exposure;
+        }
+    }
+
+    /**
+     * Update contrast at runtime
+     */
+    setContrast(contrast: number): void {
+        if (this.pipeline && this.pipeline.imageProcessing) {
+            this.pipeline.imageProcessing.contrast = contrast;
+        }
+    }
+
+    dispose(): void {
+        if (this.pipeline) {
+            this.pipeline.dispose();
+            this.pipeline = null;
+        }
+    }
+}
