@@ -22,8 +22,8 @@ interface SplatmapConfig {
  */
 export class TerrainSplatmapGenerator {
     private config: SplatmapConfig = {
-        rockySlopeMin: 30,      // Lowered from 35 - Slopes steeper than 30° = rocky
-        grassSlopeMax: 15,      // Lowered from 25 - Slopes flatter than 15° = grass
+        rockySlopeMin: 35,      // Slopes steeper than 35° = rocky
+        grassSlopeMax: 25,      // Slopes flatter than 25° = grass
         noiseScale: 0.1,        // Noise variation
         resolution: 1024        // Splatmap size
     };

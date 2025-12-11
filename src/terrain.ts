@@ -47,21 +47,6 @@ export class TerrainSystem {
                 false,  // updatable
                 (mesh: GroundMesh) => {
                     console.log('✅ Terrain mesh created');
-
-                    // Ensure tangents are calculated for Normal Mapping (Critical for PBR Node Material)
-                    mesh.forceSharedVertices();
-
-                    const positions = mesh.getVerticesData('position');
-                    const normals = mesh.getVerticesData('normal');
-                    const uvs = mesh.getVerticesData('uv');
-                    const indices = mesh.getIndices();
-
-                    // Calculate tangents manually to avoid Mesh prototype issues
-                    if (positions && normals && uvs && indices) {
-                        const tangents = this.calculateTangents(positions, normals, uvs, indices);
-                        mesh.setVerticesData('tangent', tangents);
-                    }
-
                     this.applyMaterial(mesh);
 
                     // Enable collisions
@@ -74,29 +59,179 @@ export class TerrainSystem {
     }
 
     private async applyMaterial(mesh: GroundMesh): Promise<void> {
-        console.log('🎨 Applying Node Material multi-texture terrain...');
+        console.log('🎨 Applying PBR multi-texture terrain material...');
 
-        const { TerrainNodeMaterial } = await import('./terrain-node-material');
+        // Import PBRCustomMaterial and Texture class
+        const { PBRCustomMaterial } = await import('@babylonjs/materials');
         const { TerrainSplatmapGenerator } = await import('./terrain-splatmap-generator');
         const { TERRAIN_TEXTURES } = await import('./terrain-texture-config');
+        const { Texture } = await import('@babylonjs/core/Materials/Textures/texture');
 
-        // Generate procedural splatmap
+        // Create PBR Custom Material
+        const material = new PBRCustomMaterial('terrainPBR', this.scene);
+
+        // Load all 3 terrain textures
+        const tex1 = TERRAIN_TEXTURES[0]; // Rocky Trail
+        const tex2 = TERRAIN_TEXTURES[1]; // Mud Forest
+        const tex3 = TERRAIN_TEXTURES[2]; // Forest Ground
+
+        // Generate splatmap from terrain geometry
         const splatmapGen = new TerrainSplatmapGenerator(this.scene);
         const splatmap = splatmapGen.generateSplatmap(mesh);
 
-        // Create the Node Material
-        // We pass the configuration directly. The material class handles texture loading.
-        const terrainMat = new TerrainNodeMaterial('terrainNodeMat', this.scene, TERRAIN_TEXTURES);
+        // Load texture 1 (Rocky Trail) - Red channel
+        const albedo1 = new Texture(tex1.albedoPath, this.scene);
+        albedo1.uScale = tex1.uvScale;
+        albedo1.vScale = tex1.uvScale;
 
-        // Assign the runtime-generated splatmap
-        terrainMat.setSplatmap(splatmap);
+        const normal1 = new Texture(tex1.normalPath, this.scene);
+        normal1.uScale = tex1.uvScale;
+        normal1.vScale = tex1.uvScale;
 
-        // Assign to mesh
-        mesh.material = terrainMat.getMaterial();
+        let roughness1: InstanceType<typeof Texture> | null = null;
+        if (tex1.roughnessPath) {
+            roughness1 = new Texture(tex1.roughnessPath, this.scene);
+            roughness1.uScale = tex1.uvScale;
+            roughness1.vScale = tex1.uvScale;
+        }
 
-        console.log('✅ Terrain Node Material applied');
-        console.log(`   - Blending ${TERRAIN_TEXTURES.length} texture sets based on slope`);
-        console.log(`   - Splatmap: Procedural RGB`);
+        // Load texture 2 (Mud Forest) - Green channel
+        const albedo2 = new Texture(tex2.albedoPath, this.scene);
+        albedo2.uScale = tex2.uvScale;
+        albedo2.vScale = tex2.uvScale;
+
+        const normal2 = new Texture(tex2.normalPath, this.scene);
+        normal2.uScale = tex2.uvScale;
+        normal2.vScale = tex2.uvScale;
+
+        let roughness2: InstanceType<typeof Texture> | null = null;
+        if (tex2.roughnessPath) {
+            roughness2 = new Texture(tex2.roughnessPath, this.scene);
+            roughness2.uScale = tex2.uvScale;
+            roughness2.vScale = tex2.uvScale;
+        }
+
+        // Load texture 3 (Forest Ground) - Blue channel
+        const albedo3 = new Texture(tex3.albedoPath, this.scene);
+        albedo3.uScale = tex3.uvScale;
+        albedo3.vScale = tex3.uvScale;
+
+        const normal3 = new Texture(tex3.normalPath, this.scene);
+        normal3.uScale = tex3.uvScale;
+        normal3.vScale = tex3.uvScale;
+
+        let roughness3: InstanceType<typeof Texture> | null = null;
+        if (tex3.roughnessPath) {
+            roughness3 = new Texture(tex3.roughnessPath, this.scene);
+            roughness3.uScale = tex3.uvScale;
+            roughness3.vScale = tex3.uvScale;
+        }
+
+        // Add custom shader code for multi-texture blending
+        material.Fragment_Custom_Albedo(`
+            // Sample splatmap (RGB = blend weights)
+            vec3 splatWeights = texture2D(splatmapSampler, vMainUV1).rgb;
+            
+            // Sample all albedo textures
+            vec3 albedo1 = texture2D(albedo1Sampler, vMainUV1).rgb;
+            vec3 albedo2 = texture2D(albedo2Sampler, vMainUV1).rgb;
+            vec3 albedo3 = texture2D(albedo3Sampler, vMainUV1).rgb;
+            
+            // Blend albedo based on splatmap weights
+            vec3 blendedAlbedo = 
+                albedo1 * splatWeights.r +
+                albedo2 * splatWeights.g +
+                albedo3 * splatWeights.b;
+            
+            surfaceAlbedo = blendedAlbedo;
+        `);
+
+        material.Fragment_Custom_MetallicRoughness(`
+            // Sample splatmap
+            vec3 splatWeights = texture2D(splatmapSampler, vMainUV1).rgb;
+    
+            // Sample roughness from all textures (green channel)
+            float rough1 = ${roughness1 ? 'texture2D(roughness1Sampler, vMainUV1).g' : '0.85'};
+            float rough2 = ${roughness2 ? 'texture2D(roughness2Sampler, vMainUV1).g' : '0.85'};
+            float rough3 = ${roughness3 ? 'texture2D(roughness3Sampler, vMainUV1).g' : '0.85'};
+            
+            // Blend roughness
+            float blendedRoughness = 
+                rough1 * splatWeights.r +
+                rough2 * splatWeights.g +
+                rough3 * splatWeights.b;
+            
+            roughness = blendedRoughness;
+            metallic = 0.0; // Terrain is non-metallic
+        `);
+
+        material.Fragment_Before_FragColor(`
+            // Sample splatmap
+            vec3 splatWeights = texture2D(splatmapSampler, vMainUV1).rgb;
+            
+            // Sample all normal maps
+            vec3 normal1 = texture2D(normal1Sampler, vMainUV1).xyz * 2.0 - 1.0;
+            vec3 normal2 = texture2D(normal2Sampler, vMainUV1).xyz * 2.0 - 1.0;
+            vec3 normal3 = texture2D(normal3Sampler, vMainUV1).xyz * 2.0 - 1.0;
+            
+            // Blend normals (proper tangent-space blending)
+            vec3 blendedNormal = normalize(
+                normal1 * splatWeights.r +
+                normal2 * splatWeights.g +
+                normal3 * splatWeights.b
+            );
+            
+            // Apply to bump normal
+            normalW = normalize(blendedNormal);
+        `);
+
+        // Add custom samplers for all textures
+        material.AddUniform('splatmapSampler', 'sampler2D', null);
+        material.AddUniform('albedo1Sampler', 'sampler2D', null);
+        material.AddUniform('albedo2Sampler', 'sampler2D', null);
+        material.AddUniform('albedo3Sampler', 'sampler2D', null);
+        material.AddUniform('normal1Sampler', 'sampler2D', null);
+        material.AddUniform('normal2Sampler', 'sampler2D', null);
+        material.AddUniform('normal3Sampler', 'sampler2D', null);
+
+        if (roughness1) material.AddUniform('roughness1Sampler', 'sampler2D', null);
+        if (roughness2) material.AddUniform('roughness2Sampler', 'sampler2D', null);
+        if (roughness3) material.AddUniform('roughness3Sampler', 'sampler2D', null);
+
+        // Set texture samplers
+        material.onBindObservable.add(() => {
+            material.getEffect()?.setTexture('splatmapSampler', splatmap);
+            material.getEffect()?.setTexture('albedo1Sampler', albedo1);
+            material.getEffect()?.setTexture('albedo2Sampler', albedo2);
+            material.getEffect()?.setTexture('albedo3Sampler', albedo3);
+            material.getEffect()?.setTexture('normal1Sampler', normal1);
+            material.getEffect()?.setTexture('normal2Sampler', normal2);
+            material.getEffect()?.setTexture('normal3Sampler', normal3);
+
+            if (roughness1) material.getEffect()?.setTexture('roughness1Sampler', roughness1);
+            if (roughness2) material.getEffect()?.setTexture('roughness2Sampler', roughness2);
+            if (roughness3) material.getEffect()?.setTexture('roughness3Sampler', roughness3);
+        });
+
+        // PBR properties
+        material.metallic = 0.0;
+        material.roughness = 0.85;
+        material.usePhysicalLightFalloff = true;
+
+        // Enable HDRI environment if available
+        if (this.scene.environmentTexture) {
+            material.reflectionTexture = this.scene.environmentTexture;
+        }
+
+        mesh.material = material;
+
+        console.log('✅ PBR multi-texture terrain material applied');
+        console.log(`   - Texture 1(Red): ${tex1.name}`);
+        console.log(`   - Texture 2(Green): ${tex2.name}`);
+        console.log(`   - Texture 3(Blue): ${tex3.name}`);
+        console.log(`   - Splatmap: Procedurally generated from terrain slope`);
+        console.log(`   - PBR: Full metallic / roughness workflow with HDRI`);
+        console.log('');
     }
 
     getTerrain(): GroundMesh | null {
@@ -108,124 +243,5 @@ export class TerrainSystem {
             this.terrainMesh.dispose();
             this.terrainMesh = null;
         }
-    }
-    private calculateTangents(positions: any, normals: any, uvs: any, indices: any): Float32Array {
-        const tangents = new Float32Array(4 * (positions.length / 3));
-        const tan1 = new Float32Array(2 * positions.length);
-        const tan2 = new Float32Array(2 * positions.length);
-
-        const indexCount = indices.length;
-
-        for (let i = 0; i < indexCount; i += 3) {
-            const i1 = indices[i];
-            const i2 = indices[i + 1];
-            const i3 = indices[i + 2];
-
-            const x1 = positions[i1 * 3];
-            const y1 = positions[i1 * 3 + 1];
-            const z1 = positions[i1 * 3 + 2];
-
-            const x2 = positions[i2 * 3];
-            const y2 = positions[i2 * 3 + 1];
-            const z2 = positions[i2 * 3 + 2];
-
-            const x3 = positions[i3 * 3];
-            const y3 = positions[i3 * 3 + 1];
-            const z3 = positions[i3 * 3 + 2];
-
-            const w1 = uvs[i1 * 2];
-            const v1 = uvs[i1 * 2 + 1];
-
-            const w2 = uvs[i2 * 2];
-            const v2 = uvs[i2 * 2 + 1];
-
-            const w3 = uvs[i3 * 2];
-            const v3 = uvs[i3 * 2 + 1];
-
-            const x10 = x2 - x1;
-            const x20 = x3 - x1;
-            const y10 = y2 - y1;
-            const y20 = y3 - y1;
-            const z10 = z2 - z1;
-            const z20 = z3 - z1;
-
-            const s1 = w2 - w1;
-            const s2 = w3 - w1;
-            const t1 = v2 - v1;
-            const t2 = v3 - v1;
-
-            const r = 1.0 / (s1 * t2 - s2 * t1);
-            const sdirX = (t2 * x10 - t1 * x20) * r;
-            const sdirY = (t2 * y10 - t1 * y20) * r;
-            const sdirZ = (t2 * z10 - t1 * z20) * r;
-
-            const tdirX = (s1 * x20 - s2 * x10) * r;
-            const tdirY = (s1 * y20 - s2 * y10) * r;
-            const tdirZ = (s1 * z20 - s2 * z10) * r;
-
-            tan1[i1 * 3] += sdirX;
-            tan1[i1 * 3 + 1] += sdirY;
-            tan1[i1 * 3 + 2] += sdirZ;
-
-            tan1[i2 * 3] += sdirX;
-            tan1[i2 * 3 + 1] += sdirY;
-            tan1[i2 * 3 + 2] += sdirZ;
-
-            tan1[i3 * 3] += sdirX;
-            tan1[i3 * 3 + 1] += sdirY;
-            tan1[i3 * 3 + 2] += sdirZ;
-
-            tan2[i1 * 3] += tdirX;
-            tan2[i1 * 3 + 1] += tdirY;
-            tan2[i1 * 3 + 2] += tdirZ;
-
-            tan2[i2 * 3] += tdirX;
-            tan2[i2 * 3 + 1] += tdirY;
-            tan2[i2 * 3 + 2] += tdirZ;
-
-            tan2[i3 * 3] += tdirX;
-            tan2[i3 * 3 + 1] += tdirY;
-            tan2[i3 * 3 + 2] += tdirZ;
-        }
-
-        const vertexCount = positions.length / 3;
-        for (let i = 0; i < vertexCount; i++) {
-            const nX = normals[i * 3];
-            const nY = normals[i * 3 + 1];
-            const nZ = normals[i * 3 + 2];
-
-            const tX = tan1[i * 3];
-            const tY = tan1[i * 3 + 1];
-            const tZ = tan1[i * 3 + 2];
-
-            // Gram-Schmidt orthogonalize
-            const ndott = nX * tX + nY * tY + nZ * tZ;
-            let tanX = tX - nX * ndott;
-            let tanY = tY - nY * ndott;
-            let tanZ = tZ - nZ * ndott;
-
-            const length = Math.sqrt(tanX * tanX + tanY * tanY + tanZ * tanZ);
-            tanX /= length;
-            tanY /= length;
-            tanZ /= length;
-
-            tangents[i * 4] = tanX;
-            tangents[i * 4 + 1] = tanY;
-            tangents[i * 4 + 2] = tanZ;
-
-            // Calculate handedness
-            const crossX = nY * tZ - nZ * tY;
-            const crossY = nZ * tX - nX * tZ;
-            const crossZ = nX * tY - nY * tX;
-
-            const t2X = tan2[i * 3];
-            const t2Y = tan2[i * 3 + 1];
-            const t2Z = tan2[i * 3 + 2];
-
-            const dotCross = crossX * t2X + crossY * t2Y + crossZ * t2Z;
-            tangents[i * 4 + 3] = (dotCross < 0.0) ? -1.0 : 1.0;
-        }
-
-        return tangents;
     }
 }
