@@ -4,10 +4,12 @@ import { Scene, Texture, DynamicTexture, GroundMesh, Vector3 } from '@babylonjs/
  * Configuration for splatmap generation based on terrain features
  */
 interface SplatmapConfig {
-    /** Slope angle threshold (degrees) for rocky terrain (red channel) */
-    rockySlopeMin: number;
-    /** Slope angle threshold (degrees) for grass/dirt (green channel) */
-    grassSlopeMax: number;
+    /** Slope angle threshold (degrees) for steep terrain (red channel) */
+    steepSlopeMin: number;
+    /** Slope angle threshold (degrees) for medium slopes (green channel) */
+    mediumSlopeMin: number;
+    /** Slope angle threshold (degrees) for flat (blue channel) */
+    flatSlopeMax: number;
     /** Noise scale for variation */
     noiseScale: number;
     /** Splatmap texture resolution */
@@ -16,14 +18,15 @@ interface SplatmapConfig {
 
 /**
  * Generates a procedural RGB splatmap texture for terrain blending
- * - Red channel: Steep slopes (rocky terrain)
- * - Green channel: Medium slopes (grass/dirt)
- * - Blue channel: Flat areas (forest floor)
+ * - Red channel: Flat areas (Forest Leaves)
+ * - Green channel: Steep slopes (Mud Forest)
+ * - Blue channel: Medium slopes (Forest Ground)
  */
 export class TerrainSplatmapGenerator {
     private config: SplatmapConfig = {
-        rockySlopeMin: 35,      // Slopes steeper than 35° = rocky
-        grassSlopeMax: 25,      // Slopes flatter than 25° = grass
+        steepSlopeMin: 30.0,    // Lowered from 45° - more green (more area counts as steep)
+        mediumSlopeMin: 5.0,    // Lowered - adjust blue range
+        flatSlopeMax: 5.0,      // Lowered from 15° - less red (less area counts as flat)
         noiseScale: 0.1,        // Noise variation
         resolution: 1024        // Splatmap size
     };
@@ -51,8 +54,6 @@ export class TerrainSplatmapGenerator {
         const positions = terrain.getVerticesData('position');
         const normals = terrain.getVerticesData('normal');
         const subdivisions = terrain.subdivisions;
-        const width = terrain._width;
-        const height = terrain._height;
 
         if (!positions || !normals) {
             console.error('Terrain mesh missing position or normal data');
@@ -77,9 +78,9 @@ export class TerrainSplatmapGenerator {
 
                 // Set pixel color (RGB = blend weights, A = 1)
                 const pixelIndex = (y * resolution + x) * 4;
-                imageData.data[pixelIndex + 0] = Math.floor(weights.r * 255); // Red: Rocky
-                imageData.data[pixelIndex + 1] = Math.floor(weights.g * 255); // Green: Grass
-                imageData.data[pixelIndex + 2] = Math.floor(weights.b * 255); // Blue: Forest
+                imageData.data[pixelIndex + 0] = Math.floor(weights.r * 255); // Red: Mud Forest
+                imageData.data[pixelIndex + 1] = Math.floor(weights.g * 255); // Green: Forest Ground
+                imageData.data[pixelIndex + 2] = Math.floor(weights.b * 255); // Blue: Forest Leaves
                 imageData.data[pixelIndex + 3] = 255; // Alpha
             }
         }
@@ -90,9 +91,9 @@ export class TerrainSplatmapGenerator {
 
         console.log('✅ Generated terrain splatmap texture');
         console.log(`   - Resolution: ${resolution}x${resolution}`);
-        console.log(`   - Red: Rocky slopes (>${this.config.rockySlopeMin}°)`);
-        console.log(`   - Green: Grass slopes (<${this.config.grassSlopeMax}°)`);
-        console.log(`   - Blue: Flat forest floor`);
+        console.log(`   - Green: Mud Forest (steep >${this.config.steepSlopeMin}°)`);
+        console.log(`   - Blue: Forest Ground (medium ${this.config.mediumSlopeMin}-${this.config.steepSlopeMin}°)`);
+        console.log(`   - Red: Forest Leaves (flat <${this.config.flatSlopeMax}°)`);
 
         return splatmap;
     }
@@ -140,27 +141,37 @@ export class TerrainSplatmapGenerator {
         slope: number,
         noise: number
     ): { r: number; g: number; b: number } {
-        let red = 0;   // Rocky (steep slopes)
-        let green = 0; // Grass (medium slopes)
-        let blue = 0;  // Forest floor (flat)
+        let red = 0;   // Forest Leaves (flat)
+        let green = 0; // Mud Forest (steep slopes)
+        let blue = 0;  // Forest Ground (medium slopes)
 
         // Add subtle noise variation
-        const slopeWithNoise = slope + noise * 5;
+        const slopeWithNoise = slope + noise * 3;
 
-        if (slopeWithNoise >= this.config.rockySlopeMin) {
-            // Steep slopes = rocky terrain (red channel)
+        if (slopeWithNoise >= this.config.steepSlopeMin) {
+            // Steep slopes = Mud Forest (green channel)
+            green = 1.0;
+        } else if (slopeWithNoise <= this.config.flatSlopeMax) {
+            // Flat areas = Forest Leaves (red channel)
             red = 1.0;
-        } else if (slopeWithNoise <= this.config.grassSlopeMax) {
-            // Flat areas = forest floor (blue channel)
-            blue = 1.0;
         } else {
-            // Medium slopes = grass/dirt (green channel)
-            // Blend between grass and other textures
-            const blendRange = this.config.rockySlopeMin - this.config.grassSlopeMax;
-            const blendFactor = (slopeWithNoise - this.config.grassSlopeMax) / blendRange;
+            // Medium slopes = Forest Ground (blue channel)
+            // Blend between flat and steep
+            const blendRange = this.config.steepSlopeMin - this.config.flatSlopeMax;
+            const blendFactor = (slopeWithNoise - this.config.flatSlopeMax) / blendRange;
 
-            green = 1.0 - blendFactor;
-            red = blendFactor;
+            blue = 1.0;
+
+            // Smooth transitions at edges
+            if (blendFactor < 0.2) {
+                // Near flat - blend with red
+                red = 1.0 - (blendFactor / 0.2);
+                blue = blendFactor / 0.2;
+            } else if (blendFactor > 0.8) {
+                // Near steep - blend with green
+                green = (blendFactor - 0.8) / 0.2;
+                blue = 1.0 - green;
+            }
         }
 
         // Normalize to ensure sum = 1

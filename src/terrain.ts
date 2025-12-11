@@ -59,178 +59,61 @@ export class TerrainSystem {
     }
 
     private async applyMaterial(mesh: GroundMesh): Promise<void> {
-        console.log('🎨 Applying PBR multi-texture terrain material...');
+        console.log('🎨 Applying multi-texture terrain material...');
 
-        // Import PBRCustomMaterial and Texture class
-        const { PBRCustomMaterial } = await import('@babylonjs/materials');
+        const { MixMaterial } = await import('@babylonjs/materials/mix');
         const { TerrainSplatmapGenerator } = await import('./terrain-splatmap-generator');
         const { TERRAIN_TEXTURES } = await import('./terrain-texture-config');
         const { Texture } = await import('@babylonjs/core/Materials/Textures/texture');
 
-        // Create PBR Custom Material
-        const material = new PBRCustomMaterial('terrainPBR', this.scene);
+        // Create MixMaterial - designed for texture blending
+        const material = new MixMaterial('terrainMix', this.scene);
 
-        // Load all 3 terrain textures
-        const tex1 = TERRAIN_TEXTURES[0]; // Rocky Trail
-        const tex2 = TERRAIN_TEXTURES[1]; // Mud Forest
-        const tex3 = TERRAIN_TEXTURES[2]; // Forest Ground
+        const tex1 = TERRAIN_TEXTURES[0]; // Mud Forest
+        const tex2 = TERRAIN_TEXTURES[1]; // Forest Ground
+        const tex3 = TERRAIN_TEXTURES[2]; // Forest Leaves
 
-        // Generate splatmap from terrain geometry
+        console.log('📁 Loading 3 textures...');
+        console.log(`  1. ${tex1.name}: ${tex1.albedoPath}`);
+        console.log(`  2. ${tex2.name}: ${tex2.albedoPath}`);
+        console.log(`  3. ${tex3.name}: ${tex3.albedoPath}`);
+
+        // Generate splatmap
         const splatmapGen = new TerrainSplatmapGenerator(this.scene);
         const splatmap = splatmapGen.generateSplatmap(mesh);
 
-        // Load texture 1 (Rocky Trail) - Red channel
+        // Load textures
         const albedo1 = new Texture(tex1.albedoPath, this.scene);
-        albedo1.uScale = tex1.uvScale;
-        albedo1.vScale = tex1.uvScale;
+        albedo1.uScale = albedo1.vScale = tex1.uvScale;
 
-        const normal1 = new Texture(tex1.normalPath, this.scene);
-        normal1.uScale = tex1.uvScale;
-        normal1.vScale = tex1.uvScale;
-
-        let roughness1: InstanceType<typeof Texture> | null = null;
-        if (tex1.roughnessPath) {
-            roughness1 = new Texture(tex1.roughnessPath, this.scene);
-            roughness1.uScale = tex1.uvScale;
-            roughness1.vScale = tex1.uvScale;
-        }
-
-        // Load texture 2 (Mud Forest) - Green channel
         const albedo2 = new Texture(tex2.albedoPath, this.scene);
-        albedo2.uScale = tex2.uvScale;
-        albedo2.vScale = tex2.uvScale;
+        albedo2.uScale = albedo2.vScale = tex2.uvScale;
 
-        const normal2 = new Texture(tex2.normalPath, this.scene);
-        normal2.uScale = tex2.uvScale;
-        normal2.vScale = tex2.uvScale;
-
-        let roughness2: InstanceType<typeof Texture> | null = null;
-        if (tex2.roughnessPath) {
-            roughness2 = new Texture(tex2.roughnessPath, this.scene);
-            roughness2.uScale = tex2.uvScale;
-            roughness2.vScale = tex2.uvScale;
-        }
-
-        // Load texture 3 (Forest Ground) - Blue channel
         const albedo3 = new Texture(tex3.albedoPath, this.scene);
-        albedo3.uScale = tex3.uvScale;
-        albedo3.vScale = tex3.uvScale;
+        albedo3.uScale = albedo3.vScale = tex3.uvScale;
 
-        const normal3 = new Texture(tex3.normalPath, this.scene);
-        normal3.uScale = tex3.uvScale;
-        normal3.vScale = tex3.uvScale;
 
-        let roughness3: InstanceType<typeof Texture> | null = null;
-        if (tex3.roughnessPath) {
-            roughness3 = new Texture(tex3.roughnessPath, this.scene);
-            roughness3.uScale = tex3.uvScale;
-            roughness3.vScale = tex3.uvScale;
-        }
+        // Assign textures to mix material based on actual RGB channels
+        // Red channel = Forest Leaves (currently flat areas <5°)
+        // Green channel = Forest Ground (currently medium slopes 5-20°)
+        // Blue channel = Mud Forest (currently steep slopes >20°)
+        material.mixTexture1 = splatmap;  // RGB blend map
+        material.diffuseTexture1 = albedo3;  // Red = Forest Leaves (tex2)
+        material.diffuseTexture2 = albedo2;  // Green = Forest Ground (tex1)
+        material.diffuseTexture3 = albedo1;  // Blue = Mud Forest (tex0)
+        material.diffuseTexture4 = albedo1;  // Alpha (reuse Mud Forest)
 
-        // Add custom shader code for multi-texture blending
-        material.Fragment_Custom_Albedo(`
-            // Sample splatmap (RGB = blend weights)
-            vec3 splatWeights = texture2D(splatmapSampler, vMainUV1).rgb;
-            
-            // Sample all albedo textures
-            vec3 albedo1 = texture2D(albedo1Sampler, vMainUV1).rgb;
-            vec3 albedo2 = texture2D(albedo2Sampler, vMainUV1).rgb;
-            vec3 albedo3 = texture2D(albedo3Sampler, vMainUV1).rgb;
-            
-            // Blend albedo based on splatmap weights
-            vec3 blendedAlbedo = 
-                albedo1 * splatWeights.r +
-                albedo2 * splatWeights.g +
-                albedo3 * splatWeights.b;
-            
-            surfaceAlbedo = blendedAlbedo;
-        `);
-
-        material.Fragment_Custom_MetallicRoughness(`
-            // Sample splatmap
-            vec3 splatWeights = texture2D(splatmapSampler, vMainUV1).rgb;
-    
-            // Sample roughness from all textures (green channel)
-            float rough1 = ${roughness1 ? 'texture2D(roughness1Sampler, vMainUV1).g' : '0.85'};
-            float rough2 = ${roughness2 ? 'texture2D(roughness2Sampler, vMainUV1).g' : '0.85'};
-            float rough3 = ${roughness3 ? 'texture2D(roughness3Sampler, vMainUV1).g' : '0.85'};
-            
-            // Blend roughness
-            float blendedRoughness = 
-                rough1 * splatWeights.r +
-                rough2 * splatWeights.g +
-                rough3 * splatWeights.b;
-            
-            roughness = blendedRoughness;
-            metallic = 0.0; // Terrain is non-metallic
-        `);
-
-        material.Fragment_Before_FragColor(`
-            // Sample splatmap
-            vec3 splatWeights = texture2D(splatmapSampler, vMainUV1).rgb;
-            
-            // Sample all normal maps
-            vec3 normal1 = texture2D(normal1Sampler, vMainUV1).xyz * 2.0 - 1.0;
-            vec3 normal2 = texture2D(normal2Sampler, vMainUV1).xyz * 2.0 - 1.0;
-            vec3 normal3 = texture2D(normal3Sampler, vMainUV1).xyz * 2.0 - 1.0;
-            
-            // Blend normals (proper tangent-space blending)
-            vec3 blendedNormal = normalize(
-                normal1 * splatWeights.r +
-                normal2 * splatWeights.g +
-                normal3 * splatWeights.b
-            );
-            
-            // Apply to bump normal
-            normalW = normalize(blendedNormal);
-        `);
-
-        // Add custom samplers for all textures
-        material.AddUniform('splatmapSampler', 'sampler2D', null);
-        material.AddUniform('albedo1Sampler', 'sampler2D', null);
-        material.AddUniform('albedo2Sampler', 'sampler2D', null);
-        material.AddUniform('albedo3Sampler', 'sampler2D', null);
-        material.AddUniform('normal1Sampler', 'sampler2D', null);
-        material.AddUniform('normal2Sampler', 'sampler2D', null);
-        material.AddUniform('normal3Sampler', 'sampler2D', null);
-
-        if (roughness1) material.AddUniform('roughness1Sampler', 'sampler2D', null);
-        if (roughness2) material.AddUniform('roughness2Sampler', 'sampler2D', null);
-        if (roughness3) material.AddUniform('roughness3Sampler', 'sampler2D', null);
-
-        // Set texture samplers
-        material.onBindObservable.add(() => {
-            material.getEffect()?.setTexture('splatmapSampler', splatmap);
-            material.getEffect()?.setTexture('albedo1Sampler', albedo1);
-            material.getEffect()?.setTexture('albedo2Sampler', albedo2);
-            material.getEffect()?.setTexture('albedo3Sampler', albedo3);
-            material.getEffect()?.setTexture('normal1Sampler', normal1);
-            material.getEffect()?.setTexture('normal2Sampler', normal2);
-            material.getEffect()?.setTexture('normal3Sampler', normal3);
-
-            if (roughness1) material.getEffect()?.setTexture('roughness1Sampler', roughness1);
-            if (roughness2) material.getEffect()?.setTexture('roughness2Sampler', roughness2);
-            if (roughness3) material.getEffect()?.setTexture('roughness3Sampler', roughness3);
-        });
-
-        // PBR properties
-        material.metallic = 0.0;
-        material.roughness = 0.85;
-        material.usePhysicalLightFalloff = true;
-
-        // Enable HDRI environment if available
-        if (this.scene.environmentTexture) {
-            material.reflectionTexture = this.scene.environmentTexture;
-        }
+        // Material properties
+        material.specularColor = this.scene.getEngine().getCaps().highPrecisionShaderSupported ?
+            new (await import('@babylonjs/core/Maths/math.color')).Color3(0.2, 0.2, 0.2) :
+            new (await import('@babylonjs/core/Maths/math.color')).Color3(0.2, 0.2, 0.2);
 
         mesh.material = material;
 
-        console.log('✅ PBR multi-texture terrain material applied');
-        console.log(`   - Texture 1(Red): ${tex1.name}`);
-        console.log(`   - Texture 2(Green): ${tex2.name}`);
-        console.log(`   - Texture 3(Blue): ${tex3.name}`);
-        console.log(`   - Splatmap: Procedurally generated from terrain slope`);
-        console.log(`   - PBR: Full metallic / roughness workflow with HDRI`);
+        console.log('✅ Multi-texture terrain material applied (MixMaterial)');
+        console.log(`   Red channel: ${tex3.name} (flat areas <5°)`);
+        console.log(`   Green channel: ${tex2.name} (medium slopes 5-20°)`);
+        console.log(`   Blue channel: ${tex1.name} (steep slopes >20°)`);
         console.log('');
     }
 
