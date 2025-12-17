@@ -40,6 +40,13 @@ export class Game {
         this.butterflies = [];
         this.butterflyMixers = [];
         this.butterflyVelocities = []; // Movement velocities for each butterfly
+
+        // Tree LOD system - store instanced meshes and positions for culling
+        this._treeMeshes = [];       // Array of InstancedMesh objects
+        this._treePositions = [];    // Array of {x, y, z} for distance checks
+
+        // Grass LOD system - store chunks with center positions
+        this._grassChunks = [];      // Array of {mesh, centerX, centerZ}
     }
 
     async init() {
@@ -583,6 +590,17 @@ export class Game {
                 instancedMesh.castShadow = false;
                 instancedMesh.receiveShadow = false;
 
+                // Calculate chunk center for LOD
+                const chunkCenterX = -terrainHalfSize + (parseInt(cx) + 0.5) * chunkSizeX;
+                const chunkCenterZ = -terrainHalfSize + (parseInt(cz) + 0.5) * chunkSizeZ;
+
+                // Store chunk reference for LOD updates
+                this._grassChunks.push({
+                    mesh: instancedMesh,
+                    centerX: chunkCenterX,
+                    centerZ: chunkCenterZ
+                });
+
                 vegetationGroup.add(instancedMesh);
                 totalChunks++;
             }
@@ -596,7 +614,7 @@ export class Game {
     }
 
     async _placeTrees() {
-        console.log('🌲 Placing blue spruce trees around terrain...');
+        // console.log('🌲 Placing blue spruce trees around terrain...');
 
         const terrainHalfSize = 250; // 0.5km terrain
         const treeCount = 300; // Number of trees to scatter
@@ -606,20 +624,20 @@ export class Game {
             // Load the blue spruce model
             const treeGO = await this.engine.loadModel(AssetCatalog.foliage.blueSpruce, { addToScene: false });
 
-            console.log('Tree model loaded:', treeGO);
-            console.log('Tree object3D:', treeGO.object3D);
+            // console.log('Tree model loaded:', treeGO);
+            // console.log('Tree object3D:', treeGO.object3D);
 
             // Collect all meshes from the tree model
             const treeMeshes = [];
             treeGO.object3D.traverse(child => {
-                console.log('  Child:', child.type, child.name);
+                // console.log('  Child:', child.type, child.name);
                 if (child.isMesh) {
                     treeMeshes.push(child);
-                    console.log('    -> Mesh found! Geometry:', child.geometry, 'Material:', child.material);
+                    // console.log('    -> Mesh found! Geometry:', child.geometry, 'Material:', child.material);
                 }
             });
 
-            console.log(`Found ${treeMeshes.length} mesh(es) in blue spruce model`);
+            // console.log(`Found ${treeMeshes.length} mesh(es) in blue spruce model`);
 
             if (treeMeshes.length === 0) {
                 console.warn('⚠️ No tree meshes found');
@@ -665,11 +683,11 @@ export class Game {
 
                 // If we couldn't find a valid spot after maxAttempts, skip this tree
                 if (!placed) {
-                    console.log(`  Could not place tree ${i} after ${maxAttempts} attempts`);
+                    // console.log(`  Could not place tree ${i} after ${maxAttempts} attempts`);
                 }
             }
 
-            console.log(`Placed ${treePositions.length} trees with ${minTreeDistance}m minimum spacing`);
+            // console.log(`Placed ${treePositions.length} trees with ${minTreeDistance}m minimum spacing`);
 
             // Create instanced mesh for each tree mesh component
             for (let meshIndex = 0; meshIndex < treeMeshes.length; meshIndex++) {
@@ -681,7 +699,7 @@ export class Game {
                 const meshName = treeMesh.name.toLowerCase();
                 const isBranch = matName.includes('branch') || matName.includes('needle') || meshName.includes('branch') || meshName.includes('needle');
 
-                console.log(`  Processing mesh: "${treeMesh.name}", material: "${originalMat.name}" - isBranch: ${isBranch}`);
+                // console.log(`  Processing mesh: "${treeMesh.name}", material: "${originalMat.name}" - isBranch: ${isBranch}`);
 
                 // Use MeshLambertMaterial for fog support
                 const baseMat = new THREE.MeshLambertMaterial({
@@ -706,8 +724,8 @@ export class Game {
                         minY: minY,
                         maxY: maxY
                     });
-                    console.log(`    -> Applied tree wind animation (bounds: ${minY.toFixed(1)} to ${maxY.toFixed(1)})`);
-                    console.log('    Material:', mat);
+                    // console.log(`    -> Applied tree wind animation (bounds: ${minY.toFixed(1)} to ${maxY.toFixed(1)})`);
+                    // console.log('    Material:', mat);
                 } else {
                     mat = baseMat;
                 }
@@ -744,7 +762,13 @@ export class Game {
                 instancedMesh.instanceMatrix.needsUpdate = true;
                 instancedMesh.computeBoundingSphere();
                 this.engine.scene.add(instancedMesh);
+
+                // Store reference for LOD updates
+                this._treeMeshes.push(instancedMesh);
             }
+
+            // Store tree positions for distance-based LOD culling
+            this._treePositions = treePositions;
 
             // console.log(`✅ Placed ${treeCount} blue spruce trees`);
 
@@ -847,155 +871,217 @@ export class Game {
     }
 
     async _placeButterflies() {
-        // console.log('🦋 Placing animated butterflies...');
+        // OPTIMIZED: Instanced butterflies with vertex shader wing animation
+        // Reduces 300+ draw calls to just a few (one per mesh component)
 
-        const terrainHalfSize = 250; // 0.5km terrain
-        const butterflyCount = 300; // Scaled up for 0.5km terrain
-        const minHeight = 0.5;  // Minimum height above terrain (lower)
-        const maxHeight = 2;    // Maximum height above terrain (lower)
+        const terrainHalfSize = 250;
+        const butterflyCount = 300;
+        const minHeight = 0.5;
+        const maxHeight = 2;
 
         try {
-            // Use GLTFLoader directly to get fresh animation clips for each butterfly
+            // Load butterfly model
             const { GLTFLoader } = await import('three/addons/loaders/GLTFLoader.js');
-            // Import SkeletonUtils for proper cloning of animated/skinned meshes
-            const SkeletonUtilsModule = await import('three/addons/utils/SkeletonUtils.js');
-            const skeletonClone = SkeletonUtilsModule.clone || SkeletonUtilsModule.SkeletonUtils?.clone || SkeletonUtilsModule.default?.clone;
             const loader = new GLTFLoader();
             const butterflyPath = AssetCatalog.insects.butterfly;
 
-            // Load the butterfly model once to get the template
             const gltf = await new Promise((resolve, reject) => {
                 loader.load(butterflyPath, resolve, undefined, reject);
             });
 
-            // console.log(`  Found ${gltf.animations.length} animation(s) in butterfly model`);
-            if (gltf.animations.length > 0) {
-                // console.log(`  Animation names: ${gltf.animations.map(a => a.name).join(', ')} `);
+            // Collect ALL meshes from the butterfly model (body + wings)
+            const butterflyMeshes = [];
+            gltf.scene.traverse(child => {
+                if (child.isMesh) {
+                    butterflyMeshes.push(child);
+                    // console.log('🦋 Butterfly mesh found:', child.name, 'Material:', child.material?.name, 'Has texture:', !!child.material?.map);
+                }
+            });
+
+            // console.log('🦋 Total butterfly meshes:', butterflyMeshes.length);
+
+            if (butterflyMeshes.length === 0) {
+                console.warn('⚠️ No butterfly meshes found');
+                return;
             }
 
-            // Check if model has skinned meshes
-            let hasSkinnedMesh = false;
-            gltf.scene.traverse(child => {
-                if (child.isSkinnedMesh) hasSkinnedMesh = true;
-            });
-            // console.log(`  Uses skeletal animation: ${hasSkinnedMesh} `);
+            // Store all instanced meshes for updates
+            this._butterflyInstancedMeshes = [];
+            this._butterflyMaterials = [];
+
+            // Generate positions and velocities first
+            const matrix = new THREE.Matrix4();
+            const position = new THREE.Vector3();
+            const quaternion = new THREE.Quaternion();
+            const scale = new THREE.Vector3();
+            const euler = new THREE.Euler();
 
             for (let i = 0; i < butterflyCount; i++) {
-                // Use SkeletonUtils.clone for proper skeleton binding with animated models
-                const butterfly = skeletonClone(gltf.scene);
-
-                // Place first 10 butterflies near spawn for easier visibility
                 let x, z;
                 if (i < 10) {
-                    // Near spawn point (within 30m radius)
                     x = (Math.random() - 0.5) * 60;
                     z = (Math.random() - 0.5) * 60;
                 } else {
-                    // Random position on terrain
                     x = (Math.random() - 0.5) * 2 * terrainHalfSize;
                     z = (Math.random() - 0.5) * 2 * terrainHalfSize;
                 }
                 const terrainY = this.terrain ? this.terrain.getHeightAt(x, z) : 0;
                 const y = terrainY + minHeight + Math.random() * (maxHeight - minHeight);
 
-                // Set position
-                butterfly.position.set(x, y, z);
-
-                // Random Y rotation
-                butterfly.rotation.y = Math.random() * Math.PI * 2;
-
-                // Scale the butterfly - smaller size
-                const scale = 0.15 + Math.random() * 0.1; // 0.15 to 0.25 (smaller)
-                butterfly.scale.set(scale, scale, scale);
-
-                // Store a random velocity for wandering movement
-                const speed = 1 + Math.random() * 2; // 1-3 units/second
+                const speed = 1 + Math.random() * 2;
                 const angle = Math.random() * Math.PI * 2;
+                const baseScale = 0.4 + Math.random() * 0.2;  // 0.4 to 0.6
+
                 this.butterflyVelocities.push({
+                    x, y, z,
                     vx: Math.cos(angle) * speed,
                     vz: Math.sin(angle) * speed,
-                    wanderTimer: Math.random() * 30, // Random initial timer (up to 30 sec)
-                    baseHeight: minHeight + Math.random() * (maxHeight - minHeight)
+                    wanderTimer: Math.random() * 30,
+                    baseHeight: minHeight + Math.random() * (maxHeight - minHeight),
+                    scale: baseScale,
+                    cachedTerrainY: terrainY,
+                    targetTerrainY: terrainY,
+                    heightTimer: 0
                 });
-
-                // Debug: log first butterfly position
-                if (i === 0) {
-                    // console.log(`  📍 First butterfly at: x = ${x.toFixed(1)}, y = ${y.toFixed(1)}, z = ${z.toFixed(1)}, scale = ${scale.toFixed(2)} `);
-
-                    // Debug mesh info
-                    let meshCount = 0;
-                    butterfly.traverse(child => {
-                        if (child.isMesh) {
-                            meshCount++;
-                            const mat = child.material;
-                            // console.log(`    Mesh "${child.name}": visible = ${child.visible}, ` +
-                            //     `material = ${mat?.type}, color = ${mat?.color?.getHexString()}, ` +
-                            //     `opacity = ${mat?.opacity}, transparent = ${mat?.transparent}, ` +
-                            //     `side = ${mat?.side} `);
-                        }
-                    });
-                    // console.log(`    Total meshes in butterfly: ${meshCount} `);
-                }
-
-                // Make sure all meshes are visible and have working materials
-                butterfly.traverse(child => {
-                    if (child.isMesh) {
-                        child.castShadow = false;
-                        child.receiveShadow = false;
-                        child.visible = true;
-                        child.frustumCulled = false; // Disable culling for debugging
-
-                        // Clone material to avoid shared reference issues
-                        if (child.material) {
-                            child.material = child.material.clone();
-                            child.material.transparent = false;
-                            child.material.opacity = 1;
-                            child.material.depthWrite = true;
-                            child.material.depthTest = true;
-                            child.material.side = THREE.DoubleSide;
-                        }
-                    }
-                });
-
-                // Add to scene
-                this.engine.scene.add(butterfly);
-
-                // Create animation mixer for this butterfly using the ORIGINAL clips
-                if (gltf.animations.length > 0) {
-                    const mixer = new THREE.AnimationMixer(butterfly);
-                    this.butterflyMixers.push(mixer);
-
-                    // Find the flying animation or use first available
-                    let flyingClip = gltf.animations.find(clip =>
-                        clip.name.toLowerCase().includes('fly') ||
-                        clip.name.toLowerCase().includes('flying')
-                    );
-
-                    // If no 'flying' animation found, use the first one
-                    if (!flyingClip && gltf.animations.length > 0) {
-                        flyingClip = gltf.animations[0];
-                    }
-
-                    if (flyingClip) {
-                        const action = mixer.clipAction(flyingClip);
-                        action.setLoop(THREE.LoopRepeat);
-                        // Randomize start time to desync butterflies
-                        action.time = Math.random() * flyingClip.duration;
-                        // Slight speed variation
-                        action.timeScale = 0.8 + Math.random() * 0.4;
-                        action.play();
-                    }
-                }
-
-                this.butterflies.push(butterfly);
-
-                // Log progress every 25 butterflies
-                // if ((i + 1) % 25 === 0) {
-                //     console.log(`  🦋 Placed ${i + 1}/${butterflyCount} butterflies...`);
-                // }
             }
 
-            // console.log(`✅ Placed ${butterflyCount} animated butterflies`);
+            // Create instanced mesh for EACH mesh component (body, wings, etc)
+            for (const mesh of butterflyMeshes) {
+                const geometry = mesh.geometry.clone();
+                const originalMat = mesh.material;
+                const meshName = mesh.name.toLowerCase();
+                const matName = originalMat.name ? originalMat.name.toLowerCase() : '';
+
+                // Detect if this is a wing mesh - check MATERIAL name (e.g., "Wings")
+                const isWing = matName.includes('wing') || meshName.includes('wing');
+                const hasTexture = !!originalMat.map;
+
+                // console.log(`🦋 Creating instanced mesh for: ${mesh.name}, isWing: ${isWing}, hasTexture: ${hasTexture}`);
+
+                // Create shader material with wing animation
+                const butterflyMaterial = new THREE.ShaderMaterial({
+                    uniforms: {
+                        uTime: { value: 0 },
+                        uMap: { value: originalMat.map || null },
+                        uColor: { value: originalMat.color ? originalMat.color.clone() : new THREE.Color(0xffffff) },
+                        uIsWing: { value: isWing ? 1.0 : 0.0 },
+                        uHasTexture: { value: hasTexture ? 1.0 : 0.0 },
+                        fogColor: { value: this.engine.scene.fog ? this.engine.scene.fog.color : new THREE.Color(0x8a7a9a) },
+                        fogNear: { value: this.engine.scene.fog ? this.engine.scene.fog.near : 150 },
+                        fogFar: { value: this.engine.scene.fog ? this.engine.scene.fog.far : 500 }
+                    },
+                    vertexShader: `
+                        uniform float uTime;
+                        uniform float uIsWing;
+                        
+                        varying vec2 vUv;
+                        varying vec3 vWorldPosition;
+                        
+                        void main() {
+                            vUv = uv;
+                            
+                            vec3 pos = position;
+                            
+                            // Wing flapping animation - only apply to wing meshes
+                            if (uIsWing > 0.5) {
+                                // Use instance ID for phase offset to desync butterflies
+                                float instancePhase = float(gl_InstanceID) * 0.37;
+                                float flapSpeed = 10.0 + sin(instancePhase) * 3.0;
+                                float flapAngle = sin(uTime * flapSpeed + instancePhase) * 0.7;
+                                
+                                // Determine wing side based on X position (left wing < 0, right wing > 0)
+                                float wingSide = sign(pos.x);
+                                
+                                // Apply rotation around Z axis for wing flapping
+                                float angle = flapAngle * wingSide;
+                                float cosA = cos(angle);
+                                float sinA = sin(angle);
+                                
+                                // Rotate wing vertices around the body (near X=0)
+                                float pivotX = pos.x;
+                                float pivotY = pos.y;
+                                pos.x = pivotX * cosA - pivotY * sinA * 0.5;
+                                pos.y = pivotX * sinA * 0.5 + pivotY * cosA;
+                            }
+                            
+                            vec4 mvPosition = modelViewMatrix * instanceMatrix * vec4(pos, 1.0);
+                            vWorldPosition = (modelMatrix * instanceMatrix * vec4(pos, 1.0)).xyz;
+                            gl_Position = projectionMatrix * mvPosition;
+                        }
+                    `,
+                    fragmentShader: `
+                        uniform sampler2D uMap;
+                        uniform vec3 uColor;
+                        uniform float uHasTexture;
+                        uniform vec3 fogColor;
+                        uniform float fogNear;
+                        uniform float fogFar;
+                        
+                        varying vec2 vUv;
+                        varying vec3 vWorldPosition;
+                        
+                        void main() {
+                            vec3 color;
+                            float alpha = 1.0;
+                            
+                            if (uHasTexture > 0.5) {
+                                // Use texture
+                                vec4 texColor = texture2D(uMap, vUv);
+                                color = texColor.rgb * uColor;
+                                alpha = texColor.a;
+                                
+                                // Alpha test for textured parts
+                                if (alpha < 0.5) discard;
+                            } else {
+                                // No texture - use solid color (for body)
+                                color = uColor;
+                            }
+                            
+                            // Apply fog
+                            float depth = length(cameraPosition - vWorldPosition);
+                            float fogFactor = smoothstep(fogNear, fogFar, depth);
+                            color = mix(color, fogColor, fogFactor);
+                            
+                            gl_FragColor = vec4(color, alpha);
+                        }
+                    `,
+                    side: THREE.DoubleSide,
+                    transparent: true
+                });
+
+                this._butterflyMaterials.push(butterflyMaterial);
+
+                // Create instanced mesh for this component
+                const instancedMesh = new THREE.InstancedMesh(
+                    geometry,
+                    butterflyMaterial,
+                    butterflyCount
+                );
+                instancedMesh.frustumCulled = false;
+                instancedMesh.name = `InstancedButterfly_${mesh.name}`;
+
+                // Set matrices for all instances
+                for (let i = 0; i < butterflyCount; i++) {
+                    const vel = this.butterflyVelocities[i];
+                    position.set(vel.x, vel.y, vel.z);
+                    euler.set(0, Math.atan2(vel.vx, vel.vz), 0);
+                    quaternion.setFromEuler(euler);
+                    scale.set(vel.scale, vel.scale, vel.scale);
+                    matrix.compose(position, quaternion, scale);
+                    instancedMesh.setMatrixAt(i, matrix);
+                }
+
+                instancedMesh.instanceMatrix.needsUpdate = true;
+                this.engine.scene.add(instancedMesh);
+                this._butterflyInstancedMeshes.push(instancedMesh);
+            }
+
+            // Keep reference to first mesh for update loop compatibility
+            this._butterflyInstancedMesh = this._butterflyInstancedMeshes[0];
+
+            // Clear old arrays
+            this.butterflies = [];
+            this.butterflyMixers = [];
 
         } catch (error) {
             console.error('⚠️ Failed to place butterflies:', error);
@@ -1042,54 +1128,83 @@ export class Game {
             this.treeWindSystem.update(deltaTime);
         }
 
-
-        // Update butterfly animations and movement (OPTIMIZED)
-        if (this.butterflies.length > 0) {
-            const terrainHalfSize = 250; // 0.5km terrain
+        // Tree LOD: Hide trees beyond 150m from camera
+        if (this._treeMeshes.length > 0) {
             const cameraPos = this.engine.camera.position;
+            const LOD_DISTANCE_SQ = 150 * 150; // 150m squared
 
-            // Batch animation mixer updates: only update 25 per frame
-            if (!this._butterflyUpdateIndex) this._butterflyUpdateIndex = 0;
-            const batchSize = 25;
-            const startIdx = this._butterflyUpdateIndex;
-            const endIdx = Math.min(startIdx + batchSize, this.butterflies.length);
-
-            // Update animation mixers in batches (expensive operation)
-            for (let i = startIdx; i < endIdx; i++) {
-                const mixer = this.butterflyMixers[i];
-                if (mixer) {
-                    mixer.update(deltaTime * (this.butterflies.length / batchSize));
+            // Check if any trees are beyond LOD distance
+            // For efficiency, we toggle all tree meshes based on closest tree
+            let anyVisible = false;
+            for (const pos of this._treePositions) {
+                const dx = pos.x - cameraPos.x;
+                const dz = pos.z - cameraPos.z;
+                if (dx * dx + dz * dz < LOD_DISTANCE_SQ) {
+                    anyVisible = true;
+                    break;
                 }
             }
-            this._butterflyUpdateIndex = endIdx >= this.butterflies.length ? 0 : endIdx;
 
-            // Update ALL butterfly positions every frame (cheap, keeps movement smooth)
-            for (let i = 0; i < this.butterflies.length; i++) {
-                const butterfly = this.butterflies[i];
+            // Toggle all tree instanced meshes visibility
+            for (const mesh of this._treeMeshes) {
+                mesh.visible = anyVisible;
+            }
+        }
+
+        // Grass LOD: Hide chunks beyond 200m from camera
+        if (this._grassChunks.length > 0) {
+            const cameraPos = this.engine.camera.position;
+            const GRASS_LOD_DISTANCE_SQ = 200 * 200; // 200m squared
+
+            for (const chunk of this._grassChunks) {
+                const dx = chunk.centerX - cameraPos.x;
+                const dz = chunk.centerZ - cameraPos.z;
+                chunk.mesh.visible = (dx * dx + dz * dz) < GRASS_LOD_DISTANCE_SQ;
+            }
+        }
+
+        // Update instanced butterflies (OPTIMIZED - no animation mixers)
+        if (this._butterflyInstancedMeshes && this._butterflyInstancedMeshes.length > 0 && this.butterflyVelocities.length > 0) {
+            const terrainHalfSize = 250;
+            const cameraPos = this.engine.camera.position;
+
+            // Update shader time uniforms for wing animation
+            if (this._butterflyMaterials) {
+                for (const mat of this._butterflyMaterials) {
+                    mat.uniforms.uTime.value += deltaTime;
+                }
+            }
+
+            // Reusable objects for matrix composition
+            const matrix = new THREE.Matrix4();
+            const position = new THREE.Vector3();
+            const quaternion = new THREE.Quaternion();
+            const scale = new THREE.Vector3();
+            const euler = new THREE.Euler();
+
+            let visibleCount = 0;
+
+            // Update all butterfly positions and matrices
+            for (let i = 0; i < this.butterflyVelocities.length; i++) {
                 const vel = this.butterflyVelocities[i];
 
-                // Update position (movement) - every frame for smooth motion
-                butterfly.position.x += vel.vx * deltaTime;
-                butterfly.position.z += vel.vz * deltaTime;
+                // Update position
+                vel.x += vel.vx * deltaTime;
+                vel.z += vel.vz * deltaTime;
 
-                // Update target terrain height every second
-                if (!vel.heightTimer) vel.heightTimer = 0;
+                // Update terrain height periodically
                 vel.heightTimer -= deltaTime;
                 if (vel.heightTimer <= 0) {
-                    vel.targetTerrainY = this.terrain ? this.terrain.getHeightAt(butterfly.position.x, butterfly.position.z) : 0;
+                    vel.targetTerrainY = this.terrain ? this.terrain.getHeightAt(vel.x, vel.z) : 0;
                     vel.heightTimer = 1.0;
                 }
 
-                // Smoothly interpolate current height to target (prevents jitter)
-                if (vel.cachedTerrainY === undefined) vel.cachedTerrainY = vel.targetTerrainY || 0;
-                vel.cachedTerrainY += (vel.targetTerrainY - vel.cachedTerrainY) * deltaTime * 2; // Smooth lerp
+                // Smooth height interpolation
+                vel.cachedTerrainY += (vel.targetTerrainY - vel.cachedTerrainY) * deltaTime * 2;
 
-                // Bobbing motion - stay above terrain
+                // Bobbing motion
                 const bobAmount = Math.sin(performance.now() * 0.003 + i) * 0.02;
-                butterfly.position.y = vel.cachedTerrainY + vel.baseHeight + bobAmount;
-
-                // Face movement direction
-                butterfly.rotation.y = Math.atan2(vel.vx, vel.vz);
+                vel.y = vel.cachedTerrainY + vel.baseHeight + bobAmount;
 
                 // Wander timer
                 vel.wanderTimer -= deltaTime;
@@ -1099,20 +1214,39 @@ export class Game {
                     vel.vx = Math.cos(newAngle) * speed;
                     vel.vz = Math.sin(newAngle) * speed;
                     vel.wanderTimer = 25 + Math.random() * 10;
-                    // Update terrain height when changing direction
-                    vel.cachedTerrainY = this.terrain ? this.terrain.getHeightAt(butterfly.position.x, butterfly.position.z) : 0;
+                    vel.cachedTerrainY = this.terrain ? this.terrain.getHeightAt(vel.x, vel.z) : 0;
                 }
 
                 // Wrap around terrain bounds
-                if (butterfly.position.x > terrainHalfSize) butterfly.position.x = -terrainHalfSize;
-                if (butterfly.position.x < -terrainHalfSize) butterfly.position.x = terrainHalfSize;
-                if (butterfly.position.z > terrainHalfSize) butterfly.position.z = -terrainHalfSize;
-                if (butterfly.position.z < -terrainHalfSize) butterfly.position.z = terrainHalfSize;
+                if (vel.x > terrainHalfSize) vel.x = -terrainHalfSize;
+                if (vel.x < -terrainHalfSize) vel.x = terrainHalfSize;
+                if (vel.z > terrainHalfSize) vel.z = -terrainHalfSize;
+                if (vel.z < -terrainHalfSize) vel.z = terrainHalfSize;
 
-                // Distance culling
-                const dx = butterfly.position.x - cameraPos.x;
-                const dz = butterfly.position.z - cameraPos.z;
-                butterfly.visible = (dx * dx + dz * dz) < 2500;
+                // Distance culling - only update matrix for visible butterflies
+                const dx = vel.x - cameraPos.x;
+                const dz = vel.z - cameraPos.z;
+                const distSq = dx * dx + dz * dz;
+
+                if (distSq < 2500) { // 50m radius
+                    position.set(vel.x, vel.y, vel.z);
+                    euler.set(0, Math.atan2(vel.vx, vel.vz), 0);
+                    quaternion.setFromEuler(euler);
+                    scale.set(vel.scale, vel.scale, vel.scale);
+                    matrix.compose(position, quaternion, scale);
+
+                    // Update matrix for ALL instanced meshes (body, wings, etc)
+                    for (const instancedMesh of this._butterflyInstancedMeshes) {
+                        instancedMesh.setMatrixAt(visibleCount, matrix);
+                    }
+                    visibleCount++;
+                }
+            }
+
+            // Only render visible butterflies (distance culled) - for all meshes
+            for (const instancedMesh of this._butterflyInstancedMeshes) {
+                instancedMesh.count = visibleCount;
+                instancedMesh.instanceMatrix.needsUpdate = true;
             }
         }
 
