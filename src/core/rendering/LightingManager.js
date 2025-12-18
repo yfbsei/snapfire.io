@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { CSM } from 'three/examples/jsm/csm/CSM.js';
+// CSM import removed - sun and shadows disabled to eliminate light hotspot artifacts
 
 /**
  * LightingManager - Manages scene lighting and High-Quality Shadows (CSM)
@@ -34,8 +34,7 @@ export class LightingManager {
     }
 
     init() {
-        // 1. Hemisphere Light (Realistic Ambient)
-        // Replaces flat AmbientLight with a gradient (Sky Color -> Ground Color)
+        // Only Hemisphere Light (Realistic Ambient) - NO directional sun to avoid light hotspots
         this.ambient = new THREE.HemisphereLight(
             0x87CEEB, // Sky Color (Light Blue)
             0x2f4f2f, // Ground Color (Dark Green/Earth)
@@ -43,59 +42,12 @@ export class LightingManager {
         );
         this.scene.add(this.ambient);
 
-        // 2. Setup Sun (Directional Light) with CSM
-        if (this.options.csm) {
-            this._setupCSM();
-        } else {
-            this._setupSimpleLight();
-        }
+        // SUN AND SHADOWS COMPLETELY REMOVED - they caused light hotspot artifacts
+        this.sun = null;
+        this.csm = null;
     }
 
-    _setupCSM() {
-        // CSM handles the directional light creation internally
-        this.csm = new CSM({
-            maxFar: this.options.maxFar,
-            cascades: this.options.cascades,
-            mode: this.options.mode,
-            parent: this.scene,
-            shadowMapSize: this.options.shadowMapSize,
-            lightDirection: new THREE.Vector3(-1, -1, -1).normalize(),
-            camera: this.camera,
-            lightIntensity: this.options.lightIntensity
-        });
-
-        // Store reference to the internal light
-        if (this.csm.lights && this.csm.lights.length > 0) {
-            this.sun = this.csm.lights[0];
-            // Tuned Bias for CSM
-            this.sun.shadow.bias = -0.00005;
-        }
-
-        // console.log('LightingManager: CSM Initialized');
-    }
-
-    _setupSimpleLight() {
-        this.sun = new THREE.DirectionalLight(this.options.lightColor, this.options.lightIntensity);
-        this.sun.position.set(50, 100, 50);
-        this.sun.castShadow = true;
-
-        // High Quality shadow settings
-        this.sun.shadow.mapSize.width = this.options.shadowMapSize;
-        this.sun.shadow.mapSize.height = this.options.shadowMapSize;
-        this.sun.shadow.camera.near = 0.5;
-        this.sun.shadow.camera.far = 500;
-        this.sun.shadow.camera.left = -100;
-        this.sun.shadow.camera.right = 100;
-        this.sun.shadow.camera.top = 100;
-        this.sun.shadow.camera.bottom = -100;
-
-        // Bias to reduce shadow acne
-        this.sun.shadow.bias = -0.00005;
-        this.sun.shadow.normalBias = 0.02; // Helps with self-shadowing on curved surfaces
-
-        this.scene.add(this.sun);
-        // console.log('LightingManager: Simple Light Initialized');
-    }
+    // CSM and DirectionalLight removed - no longer needed
 
     /**
      * Add materials to CSM system so they receive shadows correctly

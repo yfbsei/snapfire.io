@@ -59,13 +59,13 @@ export class DualModePlayerScript extends Script {
                 sensitivity: 0.002
             });
         } else {
-            this.engine.setupTPSCamera(this.gameObject.object3D, {
-                distance: 5,
-                offset: new THREE.Vector3(0.5, this.playerHeight * 0.8, 0),
-                sensitivity: 0.002
-            });
         }
-        // console.log('Camera mode:', this.cameraMode.toUpperCase());
+
+        // Hide/Show player mesh based on mode (prevents glare from inside capsule in FPS)
+        if (this.gameObject.object3D) {
+            this.gameObject.object3D.visible = (this.cameraMode === 'tps');
+        }
+        // console.log('Camera mode:', this.cameraMode.toUpperCase(), 'Mesh visible:', this.gameObject.object3D.visible);
     }
 
     update(deltaTime) {
@@ -149,7 +149,8 @@ export class DualModePlayer extends Prefab {
         const geometry = new THREE.CapsuleGeometry(radius, height - radius * 2, 8, 16);
         const material = new THREE.MeshStandardMaterial({
             color: options.color ?? 0x4a90d9,
-            roughness: 0.5
+            roughness: 1.0, // Forced matte (was 0.5)
+            metalness: 0.0  // Ensure no metallic reflections
         });
 
         const go = new GameObject(options.name ?? 'Player');
@@ -268,12 +269,14 @@ export class FPSPlayer extends Prefab {
         const geometry = new THREE.CapsuleGeometry(radius, height - radius * 2, 8, 16);
         const material = new THREE.MeshStandardMaterial({
             color: options.color ?? 0x4a90d9,
-            roughness: 0.5
+            roughness: 1.0, // Forced matte
+            metalness: 0.0
         });
 
         const go = new GameObject(options.name ?? 'FPSPlayer');
         const mesh = new THREE.Mesh(geometry, material);
         mesh.castShadow = true;
+        mesh.visible = false; // Always hidden in FPS mode
         go.object3D.add(mesh);
 
         // Position
@@ -390,7 +393,8 @@ export class TPSPlayer extends Prefab {
         const geometry = new THREE.CapsuleGeometry(radius, height - radius * 2, 8, 16);
         const material = new THREE.MeshStandardMaterial({
             color: options.color ?? 0x4a90d9,
-            roughness: 0.5
+            roughness: 1.0, // Forced matte
+            metalness: 0.0
         });
 
         const go = new GameObject(options.name ?? 'TPSPlayer');

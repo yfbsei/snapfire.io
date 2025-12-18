@@ -184,6 +184,18 @@ export class TerrainSystem {
         if (chunk.group) {
             // Position mesh at middle of chunk since TerrainChunk is centered
             const size = this.chunkWorldSize;
+
+            // OPTIMIZATION: Use lower resolution for distant chunks
+            const playerPos = this.engine.camera ? this.engine.camera.position : new THREE.Vector3();
+            const chunkCenter = new THREE.Vector3(chunk.x * size + size / 2, 0, chunk.z * size + size / 2);
+            const distToPlayer = playerPos.distanceTo(chunkCenter);
+
+            let resMultiplier = 1.0;
+            if (distToPlayer > 300) resMultiplier = 0.25;
+            else if (distToPlayer > 150) resMultiplier = 0.5;
+
+            terrainChunk.updateResolution(resMultiplier);
+
             terrainChunk.mesh.position.set(size / 2, 0, size / 2);
             chunk.group.add(terrainChunk.mesh);
         } else {
@@ -325,9 +337,25 @@ class TerrainChunk {
         this.mesh.name = `Terrain_${this.key}`;
     }
 
-    _createGeometry() {
+    /**
+     * Update geometry resolution (LOD)
+     * @param {number} multiplier - Resolution multiplier (1.0 = full, 0.5 = half, etc.)
+     */
+    updateResolution(multiplier = 1.0) {
+        if (this._currentMultiplier === multiplier) return;
+
+        const oldGeometry = this.geometry;
+        this.geometry = this._createGeometry(multiplier);
+        this.mesh.geometry = this.geometry;
+        this._currentMultiplier = multiplier;
+
+        if (oldGeometry) oldGeometry.dispose();
+    }
+
+    _createGeometry(multiplier = 1.0) {
         const size = this.terrain.chunkWorldSize;
-        const segments = this.terrain.chunkSize - 1;
+        const baseSegments = this.terrain.chunkSize - 1;
+        const segments = Math.max(4, Math.floor(baseSegments * multiplier));
 
         const geometry = new THREE.PlaneGeometry(size, size, segments, segments);
         geometry.rotateX(-Math.PI / 2);

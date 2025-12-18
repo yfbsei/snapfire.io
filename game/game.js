@@ -40,6 +40,9 @@ export class Game {
         // World settings
         this.worldSize = 2000;
         this.worldHalfSize = 1000;
+
+        // Sky sphere reference
+        this.skySphere = null;
     }
 
     async init() {
@@ -49,17 +52,22 @@ export class Game {
             this._updateLoadingText('Initializing Engine...');
             this._updateLoadingBar(10);
 
-            // Create engine with minimal settings - NO post-processing
+            // Create engine with optimizations - NO WebGPU per request
             this.engine = new GameEngine({
                 preferWebGPU: false,
                 postProcessing: false,
-                antialias: true,
-                shadows: true,
+                antialias: false, // Disabled for extreme performance
+                shadows: false, // Disabled to eliminate light hotspot artifact
                 shadowMapSize: 1024
             });
 
             const container = document.getElementById('game-container');
             await this.engine.init(container);
+
+            // FORCE DISABLE all shadows at renderer level
+            if (this.engine.renderer && this.engine.renderer.shadowMap) {
+                this.engine.renderer.shadowMap.enabled = false;
+            }
 
             // console.log('✅ Engine initialized');
             this._updateLoadingBar(30);
@@ -79,8 +87,8 @@ export class Game {
             await this._setupPlayer();
             this._updateLoadingBar(85);
 
-            // Setup simple lighting
-            this._setupLighting();
+            // Configure engine lighting for sunset (replaces manual setup to avoid redundant suns)
+            this._configureEngineLighting();
 
             // Initialize wind animation system
             this._setupWind();
@@ -133,14 +141,14 @@ export class Game {
                 loadTexture(AssetCatalog.ground.mudForest.arm, false)
             ]);
 
+            // Restored PBR material - WITHOUT normal map (suspected cause of light hotspot)
             const terrainMaterial = new THREE.MeshStandardMaterial({
                 map: diffuseMap,
-                normalMap: normalMap,
-                normalScale: new THREE.Vector2(2.0, 2.0),
-                roughnessMap: armMap,
-                roughness: 0.15,
+                // normalMap: normalMap,  // DISABLED - suspected cause of light hotspot artifact
+                // normalScale: new THREE.Vector2(0.5, 0.5),
+                roughness: 1.0,  // Maximum matte to prevent specular
                 metalness: 0.0,
-                envMapIntensity: 0.3
+                envMapIntensity: 0.0  // No environment reflections
             });
 
             this.terrain.setMaterial(terrainMaterial);
@@ -188,11 +196,12 @@ export class Game {
 
         // Load assets for PropSystem
         this._updateLoadingText('Loading Assets for Streaming...');
-        const [foliagePack, treePack, tablePack, butterflyPack] = await Promise.all([
+        const [foliagePack, treePack, tablePack, butterflyPack, outpostPack] = await Promise.all([
             this.engine.loadModel(AssetCatalog.foliage.pack, { addToScene: false, animations: false }),
             this.engine.loadModel(AssetCatalog.foliage.blueSpruce, { addToScene: false, animations: false }),
             this.engine.loadModel(AssetCatalog.props.picnicTable, { addToScene: false, animations: false }),
-            this.engine.loadModel(AssetCatalog.insects.butterfly, { addToScene: false, animations: false })
+            this.engine.loadModel(AssetCatalog.insects.butterfly, { addToScene: false, animations: false }),
+            this.engine.loadModel(AssetCatalog.props.outpost, { addToScene: false, animations: false })
         ]);
 
         // Create and register PropSystem
@@ -200,7 +209,8 @@ export class Game {
             foliage: foliagePack,
             trees: treePack,
             tables: tablePack,
-            butterflies: butterflyPack
+            butterflies: butterflyPack,
+            outposts: outpostPack
         });
         this.engine.streamer.registerSystem(this.propSystem);
     }
@@ -215,101 +225,102 @@ export class Game {
 
         // Load HDR sunset sky as a custom sky sphere (separate brightness from scene)
         try {
-            // Load the HDRI texture
             const hdriTexture = await this.engine.assets.loadHDR(AssetCatalog.environment.hdri);
 
-            // Create a large sphere for the sky (must be within camera far plane)
-            const skyGeometry = new THREE.SphereGeometry(9000, 32, 32);
+            // 1. Convert Equirectangular HDR to CubeMap for hardware-accelerated mapping
+            // This is the most efficient way to render a skybox: it has NO seams and is EXTREMELY fast.
+            const cubeRenderTarget = new THREE.WebGLCubeRenderTarget(hdriTexture.image.height);
+            cubeRenderTarget.fromEquirectangularTexture(this.engine.renderer, hdriTexture);
+            const cubeMap = cubeRenderTarget.texture;
 
-            // Custom shader to darken only the sky, not scene textures
+            // 2. Create sphere geometry for the sky
+            const skyGeometry = new THREE.SphereGeometry(5000, 16, 16); // Reduced from 32x32 for performance
+
+            // 3. Custom shader to optimize performance:
+            //    Uses native samplerCube lookup (no per-pixel math like atan/asin)
+            //    Render LAST with depthTest=true to avoid overdraw
             const skyMaterial = new THREE.ShaderMaterial({
                 uniforms: {
-                    skyTexture: { value: hdriTexture },
-                    brightness: { value: 0.3 }  // 0.3 = 30% brightness (darken sky)
+                    skyTexture: { value: cubeMap },
+                    brightness: { value: 0.5 } // Reduced to 0.5 for balanced look
                 },
                 vertexShader: `
-                    varying vec3 vWorldPosition;
+                    varying vec3 vDirection;
                     void main() {
-                        vec4 worldPosition = modelMatrix * vec4(position, 1.0);
-                        vWorldPosition = worldPosition.xyz;
+                        // Use local position as direction for cubemap lookup
+                        vDirection = position;
                         gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
                     }
                 `,
                 fragmentShader: `
-                    uniform sampler2D skyTexture;
+                    uniform samplerCube skyTexture;
                     uniform float brightness;
-                    varying vec3 vWorldPosition;
+                    varying vec3 vDirection;
                     
-                    const float PI = 3.14159265359;
-                    
-                    // Reinhard tone mapping to compress bright HDR values
                     vec3 toneMap(vec3 color) {
                         return color / (color + vec3(1.0));
                     }
                     
                     void main() {
-                        // Convert world position to spherical UV coordinates
-                        vec3 dir = normalize(vWorldPosition);
-                        float u = 0.5 + atan(dir.z, dir.x) / (2.0 * PI);
-                        float v = 0.5 - asin(dir.y) / PI;
-                        
-                        vec4 texColor = texture2D(skyTexture, vec2(u, v));
-                        
-                        // Apply tone mapping to compress bright sun spot
+                        // Hardware-accelerated cubemap lookup
+                        vec4 texColor = textureCube(skyTexture, vDirection);
                         vec3 mapped = toneMap(texColor.rgb);
-                        
-                        // Apply brightness multiplier to darken the sky
                         gl_FragColor = vec4(mapped * brightness, 1.0);
                     }
                 `,
-                side: THREE.BackSide,  // Render inside of sphere
+                side: THREE.BackSide,
                 depthWrite: false,
-                depthTest: false  // Don't test depth - always render behind everything
+                depthTest: true  // Optimization: Only render where depth is clear
             });
 
-            const skySphere = new THREE.Mesh(skyGeometry, skyMaterial);
-            skySphere.name = 'CustomSkySphere';
-            skySphere.renderOrder = -1000;  // Render first (behind everything)
-            skySphere.frustumCulled = false;  // Always render, never cull
-            this.engine.scene.add(skySphere);
+            // Clean up original texture since we now have the CubeMap
+            hdriTexture.dispose();
+
+            this.skySphere = new THREE.Mesh(skyGeometry, skyMaterial);
+            this.skySphere.name = 'CustomSkySphere';
+            this.skySphere.renderOrder = 1000;  // Render LAST to avoid overdraw
+            this.skySphere.frustumCulled = false;
+            this.engine.scene.add(this.skySphere);
 
             // Clear the scene background so our sphere shows
             this.engine.scene.background = null;
             this.engine.scene.environment = null;
 
+            // *** CRITICAL: Disable SkySystem to prevent it from regenerating environment maps ***
+            // SkySystem._updateEnvMap sets scene.environment, which causes specular reflections
+            if (this.engine.skySystem) {
+                this.engine.skySystem.isReady = false; // Prevents update() from running
+            }
+
             // console.log('✅ HDR sunset sky loaded with custom brightness control');
         } catch (err) {
-            console.warn('⚠️ HDR sky not found, using dark sunset color');
+            console.warn('⚠️ HDR sky not found, using dark sunset color', err);
             this.engine.scene.background = new THREE.Color(0x2a1a3a);  // Dark purple sunset
         }
     }
 
-    _setupLighting() {
-        const scene = this.engine.scene;
+    /**
+     * Configure engine's built-in lighting system for sunset behavior.
+     * Replaces manual _setupLighting to avoid duplicate suns and shadow maps.
+     */
+    _configureEngineLighting() {
+        const lighting = this.engine.lighting;
+        if (!lighting) return;
 
-        // Fog disabled
+        // 1. REMOVE the Sun (DirectionalLight) entirely - causes light hotspot issues
+        if (lighting.sun) {
+            this.engine.scene.remove(lighting.sun);
+            lighting.sun = null;
+        }
 
-        // Warm ambient light for sunset atmosphere
-        const ambient = new THREE.AmbientLight(0x8a6a5a, 0.6);  // Warm orange-brown tint
-        scene.add(ambient);
+        // 2. Configure Ambient atmosphere (Hemisphere Light)
+        if (lighting.ambient) {
+            lighting.ambient.color.setHex(0xa080a0); // Dusk Purple/Lavender
+            lighting.ambient.groundColor.setHex(0x556655); // Neutral bounce
+            lighting.ambient.intensity = 2.5; // Compensate for lower sun (was 2.2)
+        }
 
-        // Sunset directional sun - warm orange, high intensity for specular
-        const sun = new THREE.DirectionalLight(0xff7744, 2.0);  // Strong for specular highlights
-        sun.position.set(300, 30, 0);  // Low sunset angle - max specular when looking toward sun
-        sun.castShadow = true;
-        sun.shadow.mapSize.width = 1024;
-        sun.shadow.mapSize.height = 1024;
-        // Optimized shadow camera - smaller bounds = better performance
-        sun.shadow.camera.near = 1;
-        sun.shadow.camera.far = 150;
-        sun.shadow.camera.left = -40;
-        sun.shadow.camera.right = 40;
-        sun.shadow.camera.top = 40;
-        sun.shadow.camera.bottom = -40;
-
-        scene.add(sun);
-
-        // console.log('✅ Lighting setup (high ambient for even coloring)');
+        // console.log('✅ Lighting consolidated (Redundant lights removed)');
     }
 
     async _setupPlayer() {
@@ -381,6 +392,19 @@ export class Game {
             this.propSystem.update(deltaTime);
         }
 
+        // Update sky sphere position to follow the camera (locks sky to infinity)
+        if (this.skySphere && this.engine.camera) {
+            this.skySphere.position.copy(this.engine.camera.position);
+        }
+
+        // *** FORCE DISABLE environment reflections every frame ***
+        if (this.engine.scene.environment !== null) {
+            this.engine.scene.environment = null;
+        }
+
+        // NOTE: Sun-following code REMOVED - it was causing specular to follow the player!
+        // The sun should stay at a fixed world-space position for proper lighting.
+
         if (this.hudManager) {
             this.hudManager.update();
         }
@@ -420,6 +444,15 @@ export class Game {
         });
     }
 
+    // Re-lock pointer on click if game is running
+    _setupPointerLockOnReload() {
+        this.engine.renderer.domElement.addEventListener('click', () => {
+            if (this.isRunning && !this.engine.input.isPointerLocked) {
+                this.engine.requestPointerLock();
+            }
+        });
+    }
+
     start() {
         // console.log('🚀 Starting game...');
 
@@ -434,6 +467,7 @@ export class Game {
         }
 
         this.engine.requestPointerLock();
+        this._setupPointerLockOnReload();
         this.engine.start();
         this.isRunning = true;
         this._lastTime = performance.now();
@@ -484,11 +518,13 @@ class PropSystem {
         this.assets = assets;
         this.materialCache = new Map();
 
-        // Configuration
-        this.grassPerChunk = 20000;
+        // Configuration (Optimized)
+        this.grassPerChunk = 3000; // Reduced from 6000 for better FPS
         this.treesPerChunk = 4;
-        this.tablesPerChunk = 0.5; // 50% chance
-        this.butterfliesPerChunk = 3;
+        this.tablesPerChunk = 2;
+        this.outpostsPerChunk = 0.1;
+
+        this.butterfliesPerChunk = 2;
 
         // Shared helpers
         this._matrix = new THREE.Matrix4();
@@ -521,6 +557,10 @@ class PropSystem {
         // Butterflies
         this.butterflyMeshes = [];
         this.assets.butterflies.object3D.traverse(m => { if (m.isMesh) this.butterflyMeshes.push(m); });
+
+        // Outposts
+        this.outpostMeshes = [];
+        this.assets.outposts.object3D.traverse(m => { if (m.isMesh) this.outpostMeshes.push(m); });
     }
 
     _getSeededRandom(x, z, seed = 0) {
@@ -538,7 +578,22 @@ class PropSystem {
         this._spawnGrass(chunk, worldX, worldZ, chunkSize);
         this._spawnTrees(chunk, worldX, worldZ, chunkSize);
         this._spawnTables(chunk, worldX, worldZ, chunkSize);
+        this._spawnOutposts(chunk, worldX, worldZ, chunkSize);
         this._spawnButterflies(chunk, worldX, worldZ, chunkSize);
+
+        // Distance-based optimization: DISABLE shadows for distant chunks
+        const playerPos = this.game.engine.camera ? this.game.engine.camera.position : new THREE.Vector3();
+        const chunkCenter = new THREE.Vector3(worldX + chunkSize / 2, 0, worldZ + chunkSize / 2);
+        const distToPlayer = playerPos.distanceTo(chunkCenter);
+
+        if (distToPlayer > 150) {
+            chunk.group.traverse(obj => {
+                if (obj.isMesh || obj.isInstancedMesh) {
+                    obj.castShadow = false;
+                    obj.receiveShadow = false; // Distant objects don't need specular/shadow receiving
+                }
+            });
+        }
     }
 
     _spawnGrass(chunk, worldX, worldZ, size) {
@@ -595,7 +650,8 @@ class PropSystem {
             this._position.set(lx, y, lz);
             this._euler.set(0, rx * Math.PI * 2, 0);
             this._quaternion.setFromEuler(this._euler);
-            const s = 0.8 + rz * 0.4;
+            // Increased scale slightly (1.2 to 1.8) to maintain visual density with fewer instances
+            const s = 1.2 + rz * 0.6;
             this._scale.set(s, s, s);
             this._matrix.compose(this._position, this._quaternion, this._scale);
             buckets[typeIdx].push(this._matrix.clone());
@@ -648,24 +704,109 @@ class PropSystem {
     }
 
     _spawnTables(chunk, worldX, worldZ, size) {
-        if (this._getSeededRandom(worldX, worldZ, 999) > this.tablesPerChunk) return;
-        const rx = this._getSeededRandom(worldX, worldZ, 333);
-        const rz = this._getSeededRandom(worldX, worldZ, 444);
+        if (this.tablesPerChunk <= 0) return;
+
+        const tableGroup = new THREE.Group();
+        tableGroup.name = 'Tables';
+        chunk.group.add(tableGroup);
+
+        const tableInstances = [];
+        for (let i = 0; i < this.tablesPerChunk; i++) {
+            // Use different seeds for each table in the chunk
+            const rx = this._getSeededRandom(worldX, worldZ, i * 333 + 777);
+            const rz = this._getSeededRandom(worldX, worldZ, i * 444 + 888);
+            const lx = rx * size;
+            const lz = rz * size;
+            const gx = worldX + lx;
+            const gz = worldZ + lz;
+            const y = this.game.terrain ? this.game.terrain.getHeightAt(gx, gz) : 0;
+
+            // Random rotation
+            const rot = rx * Math.PI * 2;
+            // Realistic picnic table scale 
+            const scale = 0.05;
+
+            tableInstances.push({ pos: [lx, y, lz], rot, scale });
+        }
+
+        this.tableMeshes.forEach(proto => {
+            const mat = this._getPropMaterial(proto.material, 0x8B4513, 0.7);
+
+            const im = new THREE.InstancedMesh(proto.geometry, mat, tableInstances.length);
+
+            // Distance check for shadows
+            const playerPos = this.game.engine.camera ? this.game.engine.camera.position : new THREE.Vector3();
+            const chunkCenter = new THREE.Vector3(worldX + size / 2, 0, worldZ + size / 2);
+            const dist = playerPos.distanceTo(chunkCenter);
+
+            im.castShadow = dist < 120; // Only cast shadows if relatively close
+            im.receiveShadow = dist < 200;
+
+            tableInstances.forEach((inst, i) => {
+                this._position.set(...inst.pos);
+                // Models often need -Math.PI/2 rotation on X if exported from Blender
+                this._euler.set(-Math.PI / 2, 0, inst.rot);
+                this._quaternion.setFromEuler(this._euler);
+                this._scale.set(inst.scale, inst.scale, inst.scale);
+                this._matrix.compose(this._position, this._quaternion, this._scale);
+                im.setMatrixAt(i, this._matrix);
+            });
+
+            im.frustumCulled = true;
+            im.castShadow = true;
+            im.receiveShadow = true;
+            im.computeBoundingSphere();
+            tableGroup.add(im);
+        });
+    }
+
+    _spawnOutposts(chunk, worldX, worldZ, size) {
+        // 0.5 probability means 1 outpost every 2 chunks on average
+        const prob = this._getSeededRandom(worldX, worldZ, 9999);
+        if (prob > this.outpostsPerChunk) return;
+
+        const outpostGroup = new THREE.Group();
+        outpostGroup.name = 'Outposts';
+        chunk.group.add(outpostGroup);
+
+        const rx = this._getSeededRandom(worldX, worldZ, 8888);
+        const rz = this._getSeededRandom(worldX, worldZ, 7777);
         const lx = rx * size;
         const lz = rz * size;
         const gx = worldX + lx;
         const gz = worldZ + lz;
         const y = this.game.terrain ? this.game.terrain.getHeightAt(gx, gz) : 0;
 
-        this.tableMeshes.forEach(proto => {
-            const mat = new THREE.MeshLambertMaterial({ map: proto.material.map, color: 0x8B4513 });
-            const mesh = new THREE.Mesh(proto.geometry, mat);
-            mesh.position.set(lx, y, lz);
-            mesh.rotation.set(-Math.PI / 2, 0, rx * Math.PI * 2);
-            mesh.scale.set(0.02, 0.02, 0.02);
-            chunk.group.add(mesh);
+        const rot = rx * Math.PI * 2;
+        const scale = 0.05; // Realistic scale (matching picnic table)
+
+        this.outpostMeshes.forEach(proto => {
+            const mat = this._getPropMaterial(proto.material);
+            const im = new THREE.InstancedMesh(proto.geometry, mat, 1);
+
+            // Distance check for shadows
+            const playerPos = this.game.engine.camera ? this.game.engine.camera.position : new THREE.Vector3();
+            const chunkCenter = new THREE.Vector3(worldX + size / 2, 0, worldZ + size / 2);
+            const dist = playerPos.distanceTo(chunkCenter);
+
+            im.castShadow = dist < 150; // Outposts are larger, shadow distance slightly higher
+            im.receiveShadow = dist < 250;
+
+            this._position.set(lx, y, lz);
+            this._euler.set(0, rot, 0); // Standing straight up facing the sky
+            this._quaternion.setFromEuler(this._euler);
+            this._scale.set(0.02, 0.02, 0.02); // Final scale reduction
+            this._matrix.compose(this._position, this._quaternion, this._scale);
+            im.setMatrixAt(0, this._matrix);
+
+            im.frustumCulled = true;
+            im.castShadow = true;
+            im.receiveShadow = true;
+            im.computeBoundingSphere();
+            outpostGroup.add(im);
         });
     }
+
 
     _spawnButterflies(chunk, worldX, worldZ, size) {
         const butterflyGroup = new THREE.Group();
@@ -696,7 +837,7 @@ class PropSystem {
         this.butterflyMeshes.forEach(proto => {
             const mat = this._getButterflyMaterial(proto.material, proto.name);
             const im = new THREE.InstancedMesh(proto.geometry, mat, butterflyInstances.length);
-            im.frustumCulled = false;
+            im.frustumCulled = true; // Was false, causing FPS drops
             im.castShadow = true;
             im.receiveShadow = false;
 
@@ -707,6 +848,20 @@ class PropSystem {
             this.activeButterflies.push(im);
             butterflyGroup.add(im);
         });
+    }
+
+    _getPropMaterial(original, colorOverride = null, roughness = 0.8) {
+        if (this.materialCache.has(original.uuid)) return this.materialCache.get(original.uuid);
+
+        // Use MeshLambertMaterial for extreme performance (no specular calculations)
+        const mat = new THREE.MeshLambertMaterial({
+            map: original.map,
+            color: colorOverride ? new THREE.Color(colorOverride) : (original.color ? original.color.clone() : 0xffffff),
+            side: THREE.FrontSide
+        });
+
+        this.materialCache.set(original.uuid, mat);
+        return mat;
     }
 
     _getButterflyMaterial(original, name) {
@@ -776,16 +931,13 @@ class PropSystem {
 
     _getGrassMaterial(original) {
         if (this.materialCache.has(original.uuid)) return this.materialCache.get(original.uuid);
-        // Use MeshStandardMaterial for better lighting response (Standard material handles PBR better)
-        // Ensure we use the color from the original GLB material
-        let mat = new THREE.MeshStandardMaterial({
+        // Use MeshLambertMaterial for extreme performance (no specular)
+        let mat = new THREE.MeshLambertMaterial({
             map: original.map,
             color: original.color.clone(),
             transparent: true,
             alphaTest: 0.5,
-            side: THREE.DoubleSide,
-            roughness: 0.8,
-            metalness: 0.0
+            side: THREE.DoubleSide
         });
         if (this.game.grassWindSystem) mat = this.game.grassWindSystem.createWindMaterial(mat, { strengthMultiplier: 0.3, useUVForHeight: true });
         this.materialCache.set(original.uuid, mat);
@@ -795,15 +947,6 @@ class PropSystem {
     _getTreeMaterial(original, name) {
         const key = original.uuid + (name || '');
         if (this.materialCache.has(key)) return this.materialCache.get(key);
-        // Use MeshStandardMaterial for trees to match environment lighting
-        let mat = new THREE.MeshStandardMaterial({
-            map: original.map,
-            color: original.color.clone(),
-            side: THREE.DoubleSide,
-            alphaTest: 0.5,
-            roughness: 0.8,
-            metalness: 0.0
-        });
 
         // Enhanced branch detection (covers needles, leaves, foliage)
         const lowerName = (name || '').toLowerCase();
@@ -812,6 +955,14 @@ class PropSystem {
             lowerName.includes('leaf') || lowerName.includes('foliage') ||
             lowerMatName.includes('branch') || lowerMatName.includes('needle') ||
             lowerMatName.includes('leaf') || lowerMatName.includes('foliage');
+
+        // Use MeshLambertMaterial for extreme performance (no specular)
+        let mat = new THREE.MeshLambertMaterial({
+            map: original.map,
+            color: original.color.clone(),
+            side: isBranch ? THREE.DoubleSide : THREE.FrontSide,
+            alphaTest: 0.5
+        });
 
         if (isBranch && this.game.treeWindSystem) {
             // Trees use UV-based wind for natural movement of branch leaves (needles)
@@ -833,9 +984,16 @@ class PropSystem {
         this.activeButterflies = this.activeButterflies.filter(im => im.parent !== null);
         const time = performance.now() * 0.001;
 
+        const playerPos = this.game.engine.camera ? this.game.engine.camera.position : new THREE.Vector3();
+
         for (const im of this.activeButterflies) {
             if (im.material.uniforms) im.material.uniforms.uTime.value = time;
+
             const data = im.userData;
+            // SKIP UPDATE for distant chunks (butterflies are small, don't need CPU cycles if far)
+            const chunkWorldPos = new THREE.Vector3(data.worldX + 50, 0, data.worldZ + 50);
+            if (playerPos.distanceTo(chunkWorldPos) > 200) continue;
+
             data.instances.forEach((inst, i) => {
                 inst.timer += dt;
 

@@ -29,7 +29,8 @@ export const AssetCatalog = {
 
     // Modern props
     props: {
-        picnicTable: `${BASE_PATH}/modern/picnic_table_-_low_poly.glb`
+        picnicTable: `${BASE_PATH}/modern/picnic_table_-_low_poly.glb`,
+        outpost: `${BASE_PATH}/modern/outpost.glb`
     },
 
     // Insects
