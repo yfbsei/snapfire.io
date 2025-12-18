@@ -11,16 +11,40 @@ export class WorldStreamer {
             chunkSize: 64, // Units
             loadDistance: 2, // Chunks radius (2 = 5x5 grid)
             unloadDistance: 3,
+            worldBounds: null, // Box3 or {minX, maxX, minZ, maxZ}
             ...options
         };
 
         this.chunks = new Map(); // "x,z" -> Chunk
         this.currentChunk = { x: null, z: null };
         this.isProcessing = false;
+        this.systems = new Set();
 
         // Debug
         this.debugGroup = new THREE.Group();
         this.engine.scene.add(this.debugGroup);
+    }
+
+    /**
+     * Register a system to be notified of chunk events
+     * @param {Object} system
+     */
+    registerSystem(system) {
+        this.systems.add(system);
+        // Load for existing chunks
+        for (const chunk of this.chunks.values()) {
+            if (typeof system.onChunkLoad === 'function') {
+                system.onChunkLoad(chunk);
+            }
+        }
+    }
+
+    /**
+     * Unregister a system
+     * @param {Object} system
+     */
+    unregisterSystem(system) {
+        this.systems.delete(system);
     }
 
     update(dt) {
@@ -46,6 +70,20 @@ export class WorldStreamer {
         // 1. Identify chunks to load
         for (let x = centerX - loadDist; x <= centerX + loadDist; x++) {
             for (let z = centerZ - loadDist; z <= centerZ + loadDist; z++) {
+                // Check if chunk is within world bounds
+                if (this.params.worldBounds) {
+                    const worldX = x * this.params.chunkSize;
+                    const worldZ = z * this.params.chunkSize;
+                    const b = this.params.worldBounds;
+
+                    // Check if ANY part of the chunk is within bounds
+                    // A chunk at (x, z) covers [x*size, (x+1)*size]
+                    if (worldX >= b.maxX || (worldX + this.params.chunkSize) <= b.minX ||
+                        worldZ >= b.maxZ || (worldZ + this.params.chunkSize) <= b.minZ) {
+                        continue;
+                    }
+                }
+
                 const key = `${x},${z}`;
                 if (!this.chunks.has(key)) {
                     this._loadChunk(key, x, z);
@@ -63,39 +101,47 @@ export class WorldStreamer {
     }
 
     async _loadChunk(key, x, z) {
-        // Placeholder: Create a logical chunk object
-        // In a real implementation, this fetches data from a server or procedural generator
-        // Using AssetStreaming to fetch a GLTF or Heightmap
-
         const chunk = {
-            x, z,
+            key, x, z,
             loaded: false,
-            object: new THREE.Group()
+            group: new THREE.Group()
         };
 
-        // Debug Visual
-        const size = this.params.chunkSize;
-        const helper = new THREE.GridHelper(size, 4, 0x444444, 0x222222);
-        helper.position.set(x * size + size / 2, 0, z * size + size / 2);
-        chunk.object.add(helper);
+        // Set position to chunk world origin
+        chunk.group.position.set(x * this.params.chunkSize, 0, z * this.params.chunkSize);
 
-        // Simulate Async Load
-        this.chunks.set(key, chunk); // Reserve spot
+        // Debug Visual (optional, can be disabled)
+        // const size = this.params.chunkSize;
+        // const helper = new THREE.GridHelper(size, 4, 0x444444, 0x222222);
+        // helper.position.set(size / 2, 0, size / 2);
+        // chunk.group.add(helper);
+
+        this.chunks.set(key, chunk);
+
+        // Notify systems
+        for (const system of this.systems) {
+            if (typeof system.onChunkLoad === 'function') {
+                system.onChunkLoad(chunk);
+            }
+        }
 
         // Add to scene
-        this.engine.scene.add(chunk.object);
+        this.engine.scene.add(chunk.group);
         chunk.loaded = true;
-
-        // console.log(`Loaded Chunk ${key}`);
     }
 
     _unloadChunk(key) {
         const chunk = this.chunks.get(key);
         if (chunk) {
-            this.engine.scene.remove(chunk.object);
-            // Dispose geometries/materials if specific to this chunk
+            // Notify systems
+            for (const system of this.systems) {
+                if (typeof system.onChunkUnload === 'function') {
+                    system.onChunkUnload(chunk);
+                }
+            }
+
+            this.engine.scene.remove(chunk.group);
             this.chunks.delete(key);
-            // console.log(`Unloaded Chunk ${key}`);
         }
     }
 }

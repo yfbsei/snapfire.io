@@ -181,8 +181,10 @@ export class TerrainSystem {
         this.chunks.set(chunk.key, terrainChunk);
 
         // Add to the chunk's group instead of the scene directly
-        // This ensures the terrain moves/unloads with the chunk hierarchy
         if (chunk.group) {
+            // Position mesh at middle of chunk since TerrainChunk is centered
+            const size = this.chunkWorldSize;
+            terrainChunk.mesh.position.set(size / 2, 0, size / 2);
             chunk.group.add(terrainChunk.mesh);
         } else {
             this.scene.add(terrainChunk.mesh);
@@ -307,9 +309,10 @@ class TerrainChunk {
         this.chunkZ = chunkZ;
         this.key = `${chunkX},${chunkZ}`;
 
-        // World position of chunk origin
-        this.worldX = chunkX * terrain.chunkWorldSize;
-        this.worldZ = chunkZ * terrain.chunkWorldSize;
+        // World position of chunk center
+        const size = terrain.chunkWorldSize;
+        this.worldX = chunkX * size + size / 2;
+        this.worldZ = chunkZ * size + size / 2;
 
         // Create geometry
         this.geometry = this._createGeometry();

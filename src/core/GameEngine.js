@@ -113,7 +113,7 @@ export class GameEngine {
 
         // Create default camera
         const aspect = container.clientWidth / container.clientHeight;
-        this.camera = new THREE.PerspectiveCamera(60, aspect, 0.1, 1000);
+        this.camera = new THREE.PerspectiveCamera(60, aspect, 0.1, 10000);
         this.camera.position.set(0, 5, 10);
 
         // Initialize input
@@ -406,7 +406,7 @@ export class GameEngine {
         }
 
         // Setup animator if model has animations
-        if (model.userData?.animations) {
+        if (model.userData?.animations && options.animations !== false) {
             const animator = new AnimationController(model, model.userData.animations);
             go._animator = animator;
             this.animators.add(animator);
@@ -498,9 +498,9 @@ export class GameEngine {
         // Update physics
         this.physics.update(deltaTime);
 
-        // Update Sky System (Day/Night cycle & IBL)
-        if (this.skySystem) {
-            this.skySystem.update(deltaTime);
+        // Update World Streaming
+        if (this.streamer) {
+            this.streamer.update(deltaTime);
         }
 
         // Update camera controller

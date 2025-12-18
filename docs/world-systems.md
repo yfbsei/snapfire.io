@@ -1,6 +1,6 @@
 # World Systems Documentation
 
-The OpenWorld Engine uses a chunk-based streaming system to handle large-scale environments, with integrated terrain, vegetation, sky, water, and weather systems.
+The OpenWorld Engine uses a chunk-based streaming system to handle large-scale environments, with integrated terrain, vegetation, sky, and water systems.
 
 ## Chunk Manager
 
@@ -271,86 +271,6 @@ water.update(deltaTime, camera);
 
 ---
 
-## Weather System
-
-Dynamic weather with day/night cycles and weather effects.
-
-### Basic Setup
-```javascript
-import { WeatherSystem } from './world/WeatherSystem.js';
-
-const weather = new WeatherSystem(engine, {
-    skySystem: sky  // Link to sky for time sync
-});
-```
-
-### Weather States
-```javascript
-// Set weather directly
-weather.setWeather('clear');
-weather.setWeather('cloudy');
-weather.setWeather('rain');
-weather.setWeather('storm');
-weather.setWeather('snow');
-weather.setWeather('fog');
-
-// Transition over time
-weather.transitionTo('rain', 10); // 10 seconds
-```
-
-### Weather Configuration
-```javascript
-// Rain
-weather.setRainSettings({
-    intensity: 1.0,       // 0-1
-    particleCount: 10000,
-    speed: 15,
-    windInfluence: 0.3
-});
-
-// Snow
-weather.setSnowSettings({
-    intensity: 0.8,
-    particleCount: 5000,
-    speed: 2,
-    accumulation: true
-});
-
-// Fog
-weather.setFogSettings({
-    color: new THREE.Color(0.7, 0.7, 0.8),
-    near: 10,
-    far: 200
-});
-```
-
-### Lightning (Storms)
-```javascript
-weather.setStormSettings({
-    lightningFrequency: 0.1,  // Strikes per second
-    thunderDelay: 2.0         // Seconds after flash
-});
-```
-
-### Weather Events
-```javascript
-weather.addEventListener('weatherChange', (event) => {
-    console.log(`Weather changed to: ${event.weather}`);
-});
-
-weather.addEventListener('lightning', () => {
-    // Flash screen, trigger audio
-});
-```
-
-### Update
-```javascript
-// In game loop
-weather.update(deltaTime);
-```
-
----
-
 ## Asset Streaming
 
 Asynchronous loading of assets based on distance.
@@ -394,7 +314,7 @@ streaming.update(camera.position);
 
 ```javascript
 import { GameEngine } from './index.js';
-import { TerrainSystem, VegetationSystem, WaterSystem, WeatherSystem } from './world';
+import { TerrainSystem, VegetationSystem, WaterSystem } from './world';
 import { SkySystem, ChunkManager } from './core/world';
 
 // Initialize
@@ -406,7 +326,7 @@ const terrain = new TerrainSystem(engine, { chunkSize: 100, heightScale: 50 });
 const vegetation = new VegetationSystem(engine, { grassCount: 50000 });
 const sky = new SkySystem(engine);
 const water = new WaterSystem(engine, { size: 2000 });
-const weather = new WeatherSystem(engine, { skySystem: sky });
+
 const chunks = new ChunkManager({ chunkSize: 100, loadDistance: 5 });
 
 // Setup
@@ -426,7 +346,7 @@ function gameLoop(dt) {
     vegetation.update(playerPos);
     sky.update(dt);
     water.update(dt, engine.camera);
-    weather.update(dt);
+
     chunks.update(playerPos);
 }
 ```

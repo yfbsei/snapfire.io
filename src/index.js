@@ -51,7 +51,6 @@ export {
 // World Systems
 export { TerrainSystem } from './world/TerrainSystem.js';
 export { VegetationSystem } from './world/VegetationSystem.js';
-export { WeatherSystem } from './world/WeatherSystem.js';
 export { WaterSystem } from './world/WaterSystem.js';
 export { WindAnimationSystem } from './world/WindAnimationSystem.js';
 

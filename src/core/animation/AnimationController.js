@@ -38,9 +38,30 @@ export class AnimationController {
      * @param {THREE.AnimationClip} clip
      */
     addClip(clip) {
-        this.clips.set(clip.name, clip);
-        const action = this.mixer.clipAction(clip);
-        this.actions.set(clip.name, action);
+        if (!clip) return;
+
+        // Basic validation: ensure clip has tracks and they are valid
+        if (!clip.tracks || clip.tracks.length === 0) {
+            // console.warn(`Animation clip "${clip.name}" has no tracks.`);
+            return;
+        }
+
+        // Check if all tracks have the necessary methods (Three.js expects createInterpolant)
+        const hasInvalidTracks = clip.tracks.some(track => !track || typeof track.createInterpolant !== 'function');
+        if (hasInvalidTracks) {
+            console.warn(`Animation clip "${clip.name}" has invalid tracks. This might happen if models are incorrectly cloned.`);
+            return;
+        }
+
+        try {
+            this.clips.set(clip.name, clip);
+            const action = this.mixer.clipAction(clip);
+            if (action) {
+                this.actions.set(clip.name, action);
+            }
+        } catch (error) {
+            console.warn(`Failed to create AnimationAction for clip "${clip.name}":`, error);
+        }
     }
 
     /**

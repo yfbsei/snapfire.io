@@ -108,23 +108,24 @@ export class WindAnimationSystem {
                 float rawHeight = clamp(uv.y, 0.0, 1.0);
                 float stiffness = rawHeight * rawHeight; // Quadratic = base stays anchored
                 
-                // Multi-layer wind oscillation for natural look
-                float windPhase1 = uWindTime * uWindSpeed + windWorldPos.x * 0.5 + windWorldPos.z * 0.3;
-                float windPhase2 = uWindTime * uWindSpeed * 0.7 + windWorldPos.z * 0.4 + windWorldPos.x * 0.2;
+                // LINEAR SWAY (Unified phase to prevent swirling/rotation)
+                float mainPhase = uWindTime * uWindSpeed + windWorldPos.x * 0.2 + windWorldPos.z * 0.2;
+                float sway = sin(mainPhase);
                 
-                float windX = sin(windPhase1) * uWindDirection.x;
-                float windZ = cos(windPhase2) * uWindDirection.y;
+                // Directional displacement
+                float windX = sway * uWindDirection.x;
+                float windZ = sway * uWindDirection.y;
                 
-                // Turbulence for organic randomness
-                float turb = sin(windWorldPos.x * 2.0 + windWorldPos.z * 2.5 + uWindTime * 3.0) * uTurbulence;
+                // Minimal turbulence
+                float turb = sin(uWindTime * uWindSpeed * 2.5 + windWorldPos.x) * uTurbulence * 0.2;
                 
                 // Apply wind displacement - only affects upper portion
                 float windAmount = uWindStrength * uWindMultiplier * stiffness;
                 transformed.x += (windX + turb) * windAmount;
                 transformed.z += (windZ + turb * 0.7) * windAmount;
                 
-                // Slight vertical compression when bending
-                transformed.y -= abs(windX + windZ) * windAmount * 0.05;
+                // Subtle vertical dip
+                transformed.y -= abs(sway) * windAmount * 0.02;
             ` : `
                 // Wind animation for foliage (position-based with radial distance from center)
                 #ifdef USE_INSTANCING
@@ -133,45 +134,33 @@ export class WindAnimationSystem {
                     vec4 windWorldPos = modelMatrix * vec4(transformed, 1.0);
                 #endif
                 
-                // For trees: use RADIAL distance from center (XZ plane) instead of just height
-                // This makes trunk (center) static and branch tips (edges) sway
-                float radialDist = length(position.xz); // Distance from tree center
-                float maxRadius = max(abs(uMeshMaxY - uMeshMinY) * 0.5, 1.0); // Approximate radius
-                float normalizedRadius = clamp(radialDist / maxRadius, 0.0, 1.0);
-                
-                // Also factor in height for grass/foliage
-                float meshHeight = uMeshMaxY - uMeshMinY;
-                float normalizedHeight = (position.y - uMeshMinY) / max(meshHeight, 0.001);
-                normalizedHeight = clamp(normalizedHeight, 0.0, 1.0);
+                // Simple height-based calculation (Removing radius as requested)
+                float meshHeight = max(uMeshMaxY - uMeshMinY, 0.1);
+                float normalizedHeight = clamp((position.y - uMeshMinY) / meshHeight, 0.0, 1.0);
                 
                 // Invert height if mesh is rotated 180°
                 if (uInvertHeight > 0.5) {
                     normalizedHeight = 1.0 - normalizedHeight;
                 }
+
+                // Simple stiffness based on height (anchored at base)
+                float stiffness = normalizedHeight * normalizedHeight;
                 
-                // Combine radial and height: use whichever is larger
-                // For trees: radial distance dominates (branch tips far from center)
-                // For grass: height dominates (tips at top)
-                float combined = max(normalizedRadius, normalizedHeight);
+                // Simple directional sway
+                float mainPhase = uWindTime * uWindSpeed + windWorldPos.x * 0.2 + windWorldPos.z * 0.2;
+                float sway = sin(mainPhase);
                 
-                // QUADRATIC falloff: center/base stays anchored, edges/tips move
-                float stiffness = combined * combined;
+                float windX = sway * uWindDirection.x;
+                float windZ = sway * uWindDirection.y;
                 
-                // Multi-layer wind oscillation
-                float windPhase1 = uWindTime * uWindSpeed + windWorldPos.x * 0.5 + windWorldPos.z * 0.3;
-                float windPhase2 = uWindTime * uWindSpeed * 0.7 + windWorldPos.z * 0.4;
+                // Very subtle turbulence
+                float turb = sin(uWindTime * uWindSpeed * 2.5 + windWorldPos.x) * uTurbulence * 0.5;
                 
-                float windX = sin(windPhase1) * uWindDirection.x;
-                float windZ = cos(windPhase2) * uWindDirection.y;
-                
-                // Turbulence
-                float turb = sin(windWorldPos.x * 2.0 + windWorldPos.z * 2.5 + uWindTime * 3.0) * uTurbulence;
-                
-                // Apply wind - ONLY to outer edges, center/trunk is anchored
+                // Apply wind
                 float windAmount = uWindStrength * uWindMultiplier * stiffness;
-                transformed.x += (windX + turb) * windAmount;
-                transformed.z += (windZ + turb * 0.7) * windAmount;
-                transformed.y -= abs(windX + windZ) * windAmount * 0.05;
+                transformed.x += (windX + turb * 0.2) * windAmount;
+                transformed.z += (windZ + turb * 0.2) * windAmount;
+                transformed.y -= abs(sway) * windAmount * 0.05;
             `;
 
             shader.vertexShader = shader.vertexShader.replace(
@@ -212,33 +201,6 @@ export class WindAnimationSystem {
     update(deltaTime) {
         this._time += deltaTime;
         this._uniforms.uWindTime.value = this._time;
-    }
-
-    /**
-     * Sync wind with WeatherSystem
-     * @param {WeatherSystem} weatherSystem 
-     */
-    syncWithWeather(weatherSystem) {
-        if (!weatherSystem) return;
-
-        // Increase wind during rain/storm
-        switch (weatherSystem.currentWeather) {
-            case 'storm':
-                this.setWindStrength(0.8);
-                this.setWindSpeed(3.0);
-                break;
-            case 'rain':
-                this.setWindStrength(0.5);
-                this.setWindSpeed(2.0);
-                break;
-            case 'cloudy':
-                this.setWindStrength(0.35);
-                this.setWindSpeed(1.5);
-                break;
-            default: // clear
-                this.setWindStrength(0.3);
-                this.setWindSpeed(1.5);
-        }
     }
 
     /**
