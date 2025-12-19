@@ -1,0 +1,476 @@
+THREE.JS MEMORY MANAGEMENT COMPLETE REFERENCE
+
+================================================================================
+GEOMETRY MEMORY
+================================================================================
+geometry.dispose()
+geometry.attributes.position.array
+geometry.index.array
+geometry.deleteAttribute('name')
+geometry.computeBoundingBox()
+geometry.computeBoundingSphere()
+geometry.setDrawRange(start, count)
+geometry.clearGroups()
+
+================================================================================
+MATERIAL MEMORY
+================================================================================
+material.dispose()
+material.map.dispose()
+material.normalMap.dispose()
+material.envMap.dispose()
+material.lightMap.dispose()
+material.aoMap.dispose()
+material.emissiveMap.dispose()
+material.bumpMap.dispose()
+material.displacementMap.dispose()
+material.roughnessMap.dispose()
+material.metalnessMap.dispose()
+material.alphaMap.dispose()
+material.specularMap.dispose()
+material.gradientMap.dispose()
+
+================================================================================
+TEXTURE MEMORY
+================================================================================
+texture.dispose()
+texture.image = null
+texture.minFilter = THREE.NearestFilter
+texture.generateMipmaps = false
+texture.needsUpdate = true
+cubeTexture.dispose()
+videoTexture.dispose()
+dataTexture.dispose()
+compressedTexture.dispose()
+
+================================================================================
+RENDERER MEMORY
+================================================================================
+renderer.dispose()
+renderer.forceContextLoss()
+renderer.info.memory.geometries
+renderer.info.memory.textures
+renderer.info.programs
+renderer.info.render.calls
+renderer.info.render.triangles
+renderer.info.render.points
+renderer.info.render.lines
+renderer.renderLists.dispose()
+renderer.shadowMap.dispose()
+renderer.state.reset()
+renderer.properties.dispose()
+renderer.domElement.remove()
+renderer.clear()
+renderer.clearColor()
+renderer.clearDepth()
+renderer.clearStencil()
+
+================================================================================
+RENDER TARGETS
+================================================================================
+renderTarget.dispose()
+renderTarget.texture.dispose()
+renderTarget.depthTexture.dispose()
+cubeRenderTarget.dispose()
+webGLRenderTarget.dispose()
+webGLMultisampleRenderTarget.dispose()
+webGLCubeRenderTarget.dispose()
+
+================================================================================
+SCENE MEMORY
+================================================================================
+scene.remove(object)
+scene.clear()
+scene.traverse(obj => obj.dispose?.())
+scene.background?.dispose()
+scene.environment?.dispose()
+
+================================================================================
+OBJECT MEMORY
+================================================================================
+mesh.geometry.dispose()
+mesh.material.dispose()
+mesh.clear()
+mesh.removeFromParent()
+object3D.dispose()
+
+================================================================================
+ANIMATION MEMORY
+================================================================================
+mixer.dispose()
+mixer.stopAllAction()
+clip.dispose()
+action.stop()
+track.dispose()
+
+================================================================================
+LIGHTS MEMORY
+================================================================================
+light.dispose()
+light.shadow.map.dispose()
+light.shadow.camera.dispose?.()
+light.target?.dispose()
+
+================================================================================
+CONTROLS MEMORY
+================================================================================
+controls.dispose()
+orbitControls.dispose()
+trackballControls.dispose()
+flyControls.dispose()
+transformControls.dispose()
+
+================================================================================
+POST-PROCESSING MEMORY
+================================================================================
+composer.dispose()
+pass.dispose()
+pass.renderTarget.dispose()
+effectComposer.dispose()
+shaderPass.dispose()
+renderPass.dispose()
+bloomPass.dispose()
+
+================================================================================
+INSTANCING MEMORY
+================================================================================
+instancedMesh.dispose()
+instancedMesh.instanceMatrix.dispose()
+instancedMesh.instanceColor.dispose()
+instancedBufferGeometry.dispose()
+instancedBufferAttribute.dispose()
+
+================================================================================
+SPRITES/POINTS MEMORY
+================================================================================
+points.dispose()
+sprite.dispose()
+spriteMaterial.dispose()
+pointsMaterial.dispose()
+lineSegments.dispose()
+line.dispose()
+
+================================================================================
+BUFFER ATTRIBUTES
+================================================================================
+attribute.array
+attribute.needsUpdate = true
+attribute.setUsage(THREE.DynamicDrawUsage)
+attribute.setUsage(THREE.StaticDrawUsage)
+attribute.setUsage(THREE.StreamDrawUsage)
+interleavedBuffer.dispose()
+interleavedBufferAttribute.dispose()
+
+================================================================================
+CACHE MANAGEMENT
+================================================================================
+THREE.Cache.enabled = false
+THREE.Cache.clear()
+THREE.Cache.files
+THREE.Cache.add(key, file)
+THREE.Cache.get(key)
+THREE.Cache.remove(key)
+
+================================================================================
+LOADERS MEMORY
+================================================================================
+loader.manager.dispose()
+textureLoader.dispose()
+gltfLoader.dispose()
+fbxLoader.dispose()
+objLoader.dispose()
+fontLoader.dispose()
+
+================================================================================
+HELPERS MEMORY
+================================================================================
+helper.dispose()
+axesHelper.dispose()
+gridHelper.dispose()
+boxHelper.dispose()
+cameraHelper.dispose()
+directionalLightHelper.dispose()
+pointLightHelper.dispose()
+spotLightHelper.dispose()
+
+================================================================================
+AUDIO MEMORY
+================================================================================
+audio.disconnect()
+audio.source?.disconnect()
+audioListener.dispose()
+positionalAudio.dispose()
+
+================================================================================
+SKELETON/BONES MEMORY
+================================================================================
+skeleton.dispose()
+skeletonHelper.dispose()
+bone.dispose()
+
+================================================================================
+GPU CAPABILITIES
+================================================================================
+renderer.capabilities.maxTextures
+renderer.capabilities.maxVertexTextures
+renderer.capabilities.maxTextureSize
+renderer.capabilities.maxCubemapSize
+renderer.capabilities.maxAttributes
+renderer.capabilities.maxVertexUniforms
+renderer.capabilities.maxVaryings
+renderer.capabilities.maxFragmentUniforms
+renderer.capabilities.vertexTextures
+renderer.capabilities.floatFragmentTextures
+renderer.capabilities.floatVertexTextures
+
+================================================================================
+WEBGL EXTENSIONS
+================================================================================
+renderer.extensions.get('WEBGL_lose_context')?.loseContext()
+renderer.extensions.get('WEBGL_lose_context')?.restoreContext()
+renderer.extensions.get('EXT_texture_filter_anisotropic')
+renderer.extensions.get('WEBGL_compressed_texture_s3tc')
+renderer.extensions.get('OES_texture_float')
+renderer.extensions.get('OES_texture_half_float')
+renderer.extensions.get('OES_standard_derivatives')
+renderer.extensions.get('OES_element_index_uint')
+renderer.extensions.get('ANGLE_instanced_arrays')
+
+================================================================================
+CURVES/PATHS MEMORY
+================================================================================
+curve.dispose()
+path.dispose()
+shape.dispose()
+extrudeGeometry.dispose()
+shapeGeometry.dispose()
+tubeGeometry.dispose()
+
+================================================================================
+CUSTOM SHADER MEMORY
+================================================================================
+shaderMaterial.dispose()
+rawShaderMaterial.dispose()
+uniformsUtils.dispose()
+
+================================================================================
+MORPH TARGETS
+================================================================================
+geometry.morphAttributes.position
+geometry.morphAttributes.normal
+geometry.morphTargetsRelative
+
+================================================================================
+LOD MEMORY
+================================================================================
+lod.dispose()
+lod.levels.forEach(level => level.object.dispose())
+
+================================================================================
+REFLECTION/REFRACTION
+================================================================================
+cubeCamera.dispose()
+cubeCamera.renderTarget.dispose()
+
+================================================================================
+CLIPPING
+================================================================================
+renderer.clippingPlanes = []
+renderer.localClippingEnabled = false
+material.clippingPlanes = []
+
+================================================================================
+FONT/TEXT MEMORY
+================================================================================
+textGeometry.dispose()
+font.dispose()
+
+================================================================================
+WORKERS/OFFSCREEN
+================================================================================
+worker.terminate()
+
+================================================================================
+MEMORY MONITORING
+================================================================================
+performance.memory?.usedJSHeapSize
+performance.memory?.totalJSHeapSize
+performance.memory?.jsHeapSizeLimit
+
+================================================================================
+TYPED ARRAYS (MANUAL MANAGEMENT)
+================================================================================
+Float32Array
+Float64Array
+Int8Array
+Int16Array
+Int32Array
+Uint8Array
+Uint16Array
+Uint32Array
+Uint8ClampedArray
+
+================================================================================
+ARRAYBUFFER
+================================================================================
+ArrayBuffer
+DataView
+
+================================================================================
+DISPOSE PATTERNS
+================================================================================
+// Traverse and dispose all children
+object.traverse(child => {
+  if (child.geometry) child.geometry.dispose()
+  if (child.material) {
+    if (Array.isArray(child.material)) {
+      child.material.forEach(mat => mat.dispose())
+    } else {
+      child.material.dispose()
+    }
+  }
+})
+
+// Dispose node helper
+function disposeNode(node) {
+  node.geometry?.dispose()
+  if (node.material) {
+    if (Array.isArray(node.material)) {
+      node.material.forEach(mat => disposeMaterial(mat))
+    } else {
+      disposeMaterial(node.material)
+    }
+  }
+}
+
+// Dispose material with textures
+function disposeMaterial(material) {
+  material.dispose()
+  for (const key in material) {
+    const value = material[key]
+    if (value?.isTexture) {
+      value.dispose()
+    }
+  }
+}
+
+================================================================================
+WEAKMAP/WEAKSET (AUTO GARBAGE COLLECTION)
+================================================================================
+WeakMap
+WeakSet
+
+================================================================================
+EVENT LISTENERS CLEANUP
+================================================================================
+element.removeEventListener('event', handler)
+window.removeEventListener('resize', handler)
+document.removeEventListener('mousemove', handler)
+
+================================================================================
+REQUESTANIMATIONFRAME CLEANUP
+================================================================================
+cancelAnimationFrame(animationId)
+
+================================================================================
+INTERVAL/TIMEOUT CLEANUP
+================================================================================
+clearInterval(intervalId)
+clearTimeout(timeoutId)
+
+================================================================================
+BLOB/URL CLEANUP
+================================================================================
+URL.revokeObjectURL(blobUrl)
+
+================================================================================
+CANVAS CLEANUP
+================================================================================
+canvas.width = 0
+canvas.height = 0
+ctx.clearRect(0, 0, canvas.width, canvas.height)
+
+================================================================================
+OBSERVER CLEANUP
+================================================================================
+intersectionObserver.disconnect()
+mutationObserver.disconnect()
+resizeObserver.disconnect()
+
+================================================================================
+STREAM CLEANUP
+================================================================================
+mediaStream.getTracks().forEach(track => track.stop())
+videoElement.srcObject = null
+
+================================================================================
+XR/WEBXR MEMORY
+================================================================================
+renderer.xr.dispose()
+xrSession.end()
+
+================================================================================
+CUSTOM MEMORY POOLS
+================================================================================
+class MemoryPool {
+  constructor(size) {
+    this.buffer = new ArrayBuffer(size)
+    this.view = new DataView(this.buffer)
+    this.offset = 0
+  }
+  alloc(bytes) {
+    const ptr = this.offset
+    this.offset += bytes
+    return ptr
+  }
+  free() {
+    this.offset = 0
+  }
+  reset() {
+    this.offset = 0
+  }
+}
+
+================================================================================
+FINALIZATION REGISTRY (CLEANUP CALLBACKS)
+================================================================================
+const registry = new FinalizationRegistry((heldValue) => {
+  // cleanup code
+})
+registry.register(object, heldValue)
+registry.unregister(object)
+
+================================================================================
+VITE CONFIG (vite.config.js)
+================================================================================
+export default {
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: (id) => {
+          if (id.includes('three')) {
+            return 'three'
+          }
+        }
+      }
+    },
+    chunkSizeWarningLimit: 1000,
+    minify: true,
+    target: 'esnext'
+  }
+}
+
+================================================================================
+PERFORMANCE API
+================================================================================
+performance.mark('start')
+performance.measure('duration', 'start', 'end')
+performance.clearMarks()
+performance.clearMeasures()
+performance.getEntries()
+performance.getEntriesByType('measure')
+performance.getEntriesByName('name')
+
+================================================================================
+END OF REFERENCE
+================================================================================

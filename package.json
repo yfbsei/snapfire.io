@@ -8,6 +8,7 @@
         "preview": "vite preview"
     },
     "dependencies": {
+        "stats-gl": "^3.8.0",
         "three": "^0.171.0"
     },
     "devDependencies": {
