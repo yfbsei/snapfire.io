@@ -39,10 +39,11 @@ class PerformanceMonitor {
             this.statsPanels.push(stats);
         }
 
-        // Press 'P' to log detailed performance info
-        window.addEventListener('keydown', (e) => {
+        // Handle keydown for detailed reporting
+        this._keydownHandler = (e) => {
             if (e.key === 'p' || e.key === 'P') this.logDetailed();
-        });
+        };
+        window.addEventListener('keydown', this._keydownHandler);
 
         console.log('📊 Performance Monitor initialized (Press P for detailed stats)');
         return this;
@@ -93,6 +94,9 @@ class PerformanceMonitor {
      * Remove stats panels and cleanup
      */
     dispose() {
+        if (this._keydownHandler) {
+            window.removeEventListener('keydown', this._keydownHandler);
+        }
         const container = document.getElementById('perf-monitor');
         if (container) {
             container.remove();

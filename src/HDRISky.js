@@ -115,7 +115,7 @@ export class HDRISky {
             depthWrite: false,
         });
 
-        const geometry = new THREE.SphereGeometry(1, 64, 32);
+        const geometry = new THREE.SphereGeometry(1, 8, 4); // Ultra-low: 64 triangles
         this.skyMesh = new THREE.Mesh(geometry, material);
 
         this.skyMesh.scale.setScalar(4000);

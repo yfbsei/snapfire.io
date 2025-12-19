@@ -41,31 +41,35 @@ export class Player {
     }
 
     _setupInput() {
-        window.addEventListener('keydown', (e) => {
+        this._keydownHandler = (e) => {
             switch (e.code) {
                 case 'KeyW': this.keys.forward = true; break;
                 case 'KeyS': this.keys.backward = true; break;
                 case 'KeyA': this.keys.left = true; break;
                 case 'KeyD': this.keys.right = true; break;
             }
-        });
+        };
 
-        window.addEventListener('keyup', (e) => {
+        this._keyupHandler = (e) => {
             switch (e.code) {
                 case 'KeyW': this.keys.forward = false; break;
                 case 'KeyS': this.keys.backward = false; break;
                 case 'KeyA': this.keys.left = false; break;
                 case 'KeyD': this.keys.right = false; break;
             }
-        });
+        };
 
-        window.addEventListener('mousemove', (e) => {
+        this._mousemoveHandler = (e) => {
             if (document.pointerLockElement === document.body) {
                 this.yaw -= e.movementX * this.sensitivity;
                 this.pitch -= e.movementY * this.sensitivity;
                 this.pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, this.pitch));
             }
-        });
+        };
+
+        window.addEventListener('keydown', this._keydownHandler);
+        window.addEventListener('keyup', this._keyupHandler);
+        window.addEventListener('mousemove', this._mousemoveHandler);
     }
 
     update(deltaTime) {
@@ -115,6 +119,25 @@ export class Player {
                 document.exitPointerLock();
             }
             this.mesh.visible = true;
+        }
+    }
+
+    dispose() {
+        // Remove event listeners
+        window.removeEventListener('keydown', this._keydownHandler);
+        window.removeEventListener('keyup', this._keyupHandler);
+        window.removeEventListener('mousemove', this._mousemoveHandler);
+
+        // Cleanup physical mesh
+        if (this.mesh) {
+            this.scene.remove(this.mesh);
+            this.mesh.geometry.dispose();
+            this.mesh.material.dispose();
+            this.mesh = null;
+        }
+
+        if (document.pointerLockElement === document.body) {
+            document.exitPointerLock();
         }
     }
 }

@@ -19,10 +19,10 @@ export class GrassSystem {
 
         // ============ CONFIGURATION ============
         // Pure Point Cloud System
-        this.NEAR_DIST = 60; // Range for point cloud grass
-        this.NEAR_DENSITY = 200000;
-        this.FADE_ZONE = 20;
-        this.MAX_CHUNKS = 16;
+        this.NEAR_DIST = 300; // Range for point cloud grass
+        this.NEAR_DENSITY = 100000;
+        this.FADE_ZONE = 100;
+        this.MAX_CHUNKS = 100; // 10x10 grid
 
         this.loadAssets();
     }
