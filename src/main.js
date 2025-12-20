@@ -1,15 +1,13 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { TerrainSystem } from './TerrainSystem.js';
-import { PerformanceMonitor } from './performance.js';
-import { HDRISky } from './HDRISky.js';
-import { groundMaterial } from './ground_texture.js';
-import { Player } from './player.js';
+import { TerrainSystem } from './terrain/TerrainSystem.js';
+import { PerformanceMonitor } from './core/PerformanceMonitor.js';
+import { HDRISky } from './core/HDRISky.js';
+import { Player } from './core/Player.js';
 
-// Setup
+// Scene setup
 const scene = new THREE.Scene();
-
-const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 800);
+const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.005, 200);
 const renderer = new THREE.WebGLRenderer({
     antialias: true,
     powerPreference: "high-performance"
@@ -28,30 +26,39 @@ const ambientLight = new THREE.AmbientLight(0xffffff, 0.4);
 scene.add(ambientLight);
 
 const sunLight = new THREE.DirectionalLight(0xffffff, 1.2);
-sunLight.position.set(200, 400, 200);
+sunLight.position.set(20, 50, 20);
 scene.add(sunLight);
 
-// Distance fog for smooth chunk fade-in (start fade at 200m, full fade at 400m)
-scene.fog = new THREE.Fog(0x1a1a2e, 200, 400);
+// Fog
+// Fog (100m world now feels like 1km, so fog should be tighter)
+scene.fog = new THREE.Fog(0x1a1a2e, 15, 80);
 
 // HDRI Sky
 const hdriSky = new HDRISky(scene, renderer);
 hdriSky.load('/assets/HDRI/belfast_sunset_puresky_1k.hdr');
 
-// Performance monitor
+// Systems
 const perfMonitor = new PerformanceMonitor(renderer).init();
+const terrainSystem = new TerrainSystem(scene);
+const player = new Player(scene, camera, terrainSystem);
 
-const terrainSystem = new TerrainSystem(scene, groundMaterial);
-terrainSystem.update(camera.position, camera);
-
-camera.position.set(300, 300, 300);
+// Camera position - free camera mode (close to tiny player)
+camera.position.set(5, 5, 5);
+controls.target.set(0, 0, 0);
 controls.update();
 
-// Initialize Player
-const player = new Player(scene, camera, terrainSystem);
+// Mode toggle
 let isFirstPerson = false;
 
-// Clock for DeltaTime
+window.addEventListener('keydown', (e) => {
+    if (e.code === 'KeyV') {
+        isFirstPerson = !isFirstPerson;
+        controls.enabled = !isFirstPerson;
+        player.setEnabled(isFirstPerson);
+    }
+});
+
+// Animation loop
 const clock = new THREE.Clock();
 let animationId = null;
 
@@ -72,90 +79,32 @@ function animate() {
     perfMonitor.end();
 }
 
-// Track listeners for cleanup
-const windowListeners = {};
-
-windowListeners.resize = () => {
+// Resize handler
+function onResize() {
     camera.aspect = window.innerWidth / window.innerHeight;
     camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
-};
+}
+window.addEventListener('resize', onResize);
 
-window.addEventListener('resize', windowListeners.resize);
-
-console.log('🚀 Terrain Engine Started');
-
-// Real-time Sky Control
-let skyExposure = 0.05;
-let skyContrast = 1.0;
-
-windowListeners.keydown = (e) => {
-    switch (e.code) {
-        case 'ArrowUp':
-            skyExposure += 0.05;
-            hdriSky.setSkyExposure(skyExposure);
-            console.log(`Sky Exposure: ${skyExposure.toFixed(2)}`);
-            break;
-        case 'ArrowDown':
-            skyExposure = Math.max(0, skyExposure - 0.05);
-            hdriSky.setSkyExposure(skyExposure);
-            console.log(`Sky Exposure: ${skyExposure.toFixed(2)}`);
-            break;
-        case 'ArrowRight':
-            skyContrast += 0.05;
-            hdriSky.setSkyContrast(skyContrast);
-            console.log(`Sky Contrast: ${skyContrast.toFixed(2)}`);
-            break;
-        case 'ArrowLeft':
-            skyContrast = Math.max(0.1, skyContrast - 0.05);
-            hdriSky.setSkyContrast(skyContrast);
-            console.log(`Sky Contrast: ${skyContrast.toFixed(2)}`);
-            break;
-        case 'KeyV':
-            isFirstPerson = !isFirstPerson;
-            controls.enabled = !isFirstPerson;
-            player.setEnabled(isFirstPerson);
-            console.log(`Mode: ${isFirstPerson ? 'First Person' : 'Free View'}`);
-            break;
-    }
-};
-
-window.addEventListener('keydown', windowListeners.keydown);
-
-// Global cleanup function for memory optimization
+// Cleanup
 function disposeEngine() {
-    console.log('🧹 Cleaning up engine resources...');
-
     if (animationId) cancelAnimationFrame(animationId);
+    window.removeEventListener('resize', onResize);
 
-    // Remove window listeners
-    window.removeEventListener('resize', windowListeners.resize);
-    window.removeEventListener('keydown', windowListeners.keydown);
-
-    // Dispose player
     player.dispose();
-
-    // Dispose terrain system
     terrainSystem.dispose();
-
-    // Dispose HDRI
     hdriSky.dispose();
-
-    // Dispose performance monitor
     perfMonitor.dispose();
-
-    // Dispose renderer
     renderer.dispose();
     renderer.forceContextLoss();
 
-    // Clear DOM
-    if (renderer.domElement && renderer.domElement.parentNode) {
+    if (renderer.domElement?.parentNode) {
         renderer.domElement.parentNode.removeChild(renderer.domElement);
     }
 }
 
-// Attach to window for manual testing or HMR
 window.disposeEngine = disposeEngine;
 
-// Start loop
+// Start
 animate();
